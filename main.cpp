@@ -12,18 +12,21 @@ void GenerateSampleList(const std::string &dense_folder, std::vector<Problem> &p
     int num_images;
     file >> num_images;
 
-    for (int i = 0; i < num_images; ++i) {
+    for (int i = 0; i < num_images; ++i)
+    {
         Problem problem;
         problem.src_image_ids.clear();
         file >> problem.ref_image_id;
 
         int num_src_images;
         file >> num_src_images;
-        for (int j = 0; j < num_src_images; ++j) {
+        for (int j = 0; j < num_src_images; ++j)
+        {
             int id;
             float score;
             file >> id >> score;
-            if (score <= 0.0f) {
+            if (score <= 0.0f)
+            {
                 continue;
             }
             problem.src_image_ids.push_back(id);
@@ -35,13 +38,14 @@ void GenerateSampleList(const std::string &dense_folder, std::vector<Problem> &p
 int ComputeMultiScaleSettings(const std::string &dense_folder, std::vector<Problem> &problems)
 {
     int max_num_downscale = -1;
-    int size_bound = 1000;
+    int size_bound = 200;
     PatchMatchParams pmp;
     std::string image_folder = dense_folder + std::string("/images");
 
     size_t num_images = problems.size();
 
-    for (size_t i = 0; i < num_images; ++i) {
+    for (size_t i = 0; i < num_images; ++i)
+    {
         std::stringstream image_path;
         image_path << image_folder << "/" << std::setw(8) << std::setfill('0') << problems[i].ref_image_id << ".jpg";
         cv::Mat_<uint8_t> image_uint = cv::imread(image_path.str(), cv::IMREAD_GRAYSCALE);
@@ -49,18 +53,21 @@ int ComputeMultiScaleSettings(const std::string &dense_folder, std::vector<Probl
         int rows = image_uint.rows;
         int cols = image_uint.cols;
         int max_size = std::max(rows, cols);
-        if (max_size > pmp.max_image_size) {
+        if (max_size > pmp.max_image_size)
+        {
             max_size = pmp.max_image_size;
         }
         problems[i].max_image_size = max_size;
 
         int k = 0;
-        while (max_size > size_bound) {
+        while (max_size > size_bound)
+        {
             max_size /= 2;
             k++;
         }
 
-        if (k > max_num_downscale) {
+        if (k > max_num_downscale)
+        {
             max_num_downscale = k;
         }
 
@@ -70,7 +77,7 @@ int ComputeMultiScaleSettings(const std::string &dense_folder, std::vector<Probl
     return max_num_downscale;
 }
 
-void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> &problems, const int idx, bool geom_consistency, bool planar_prior, bool hierarchy, bool multi_geometrty=false)
+void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> &problems, const int idx, bool geom_consistency, bool planar_prior, bool hierarchy, bool multi_geometrty = false)
 {
     const Problem problem = problems[idx];
     std::cout << "Processing image " << std::setw(8) << std::setfill('0') << problem.ref_image_id << "..." << std::endl;
@@ -81,10 +88,12 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
     mkdir(result_folder.c_str(), 0777);
 
     ACMMP acmmp;
-    if (geom_consistency) {
+    if (geom_consistency)
+    {
         acmmp.SetGeomConsistencyParams(multi_geometrty);
     }
-    if (hierarchy) {
+    if (hierarchy)
+    {
         acmmp.SetHierarchyParams();
     }
 
@@ -100,8 +109,10 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
     cv::Mat_<cv::Vec3f> normals = cv::Mat::zeros(height, width, CV_32FC3);
     cv::Mat_<float> costs = cv::Mat::zeros(height, width, CV_32FC1);
 
-    for (int col = 0; col < width; ++col) {
-        for (int row = 0; row < height; ++row) {
+    for (int col = 0; col < width; ++col)
+    {
+        for (int row = 0; row < height; ++row)
+        {
             int center = row * width + col;
             float4 plane_hypothesis = acmmp.GetPlaneHypothesis(center);
             depths(row, col) = plane_hypothesis.w;
@@ -110,7 +121,8 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
         }
     }
 
-    if (planar_prior) {
+    if (planar_prior)
+    {
         std::cout << "Run Planar Prior Assisted PatchMatch MVS ..." << std::endl;
         acmmp.SetPlanarPriorParams();
 
@@ -126,8 +138,10 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
         mbgr[2] = refImage.clone();
         cv::Mat srcImage;
         cv::merge(mbgr, srcImage);
-        for (const auto triangle : triangles) {
-            if (imageRC.contains(triangle.pt1) && imageRC.contains(triangle.pt2) && imageRC.contains(triangle.pt3)) {
+        for (const auto triangle : triangles)
+        {
+            if (imageRC.contains(triangle.pt1) && imageRC.contains(triangle.pt2) && imageRC.contains(triangle.pt3))
+            {
                 cv::line(srcImage, triangle.pt1, triangle.pt2, cv::Scalar(0, 0, 255));
                 cv::line(srcImage, triangle.pt1, triangle.pt3, cv::Scalar(0, 0, 255));
                 cv::line(srcImage, triangle.pt2, triangle.pt3, cv::Scalar(0, 0, 255));
@@ -141,8 +155,10 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
         planeParams_tri.clear();
 
         uint32_t idx = 0;
-        for (const auto triangle : triangles) {
-            if (imageRC.contains(triangle.pt1) && imageRC.contains(triangle.pt2) && imageRC.contains(triangle.pt3)) {
+        for (const auto triangle : triangles)
+        {
+            if (imageRC.contains(triangle.pt1) && imageRC.contains(triangle.pt2) && imageRC.contains(triangle.pt3))
+            {
                 float L01 = sqrt(pow(triangle.pt1.x - triangle.pt2.x, 2) + pow(triangle.pt1.y - triangle.pt2.y, 2));
                 float L02 = sqrt(pow(triangle.pt1.x - triangle.pt3.x, 2) + pow(triangle.pt1.y - triangle.pt3.y, 2));
                 float L12 = sqrt(pow(triangle.pt2.x - triangle.pt3.x, 2) + pow(triangle.pt2.y - triangle.pt3.y, 2));
@@ -150,8 +166,10 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
                 float max_edge_length = std::max(L01, std::max(L02, L12));
                 float step = 1.0 / max_edge_length;
 
-                for (float p = 0; p < 1.0; p += step) {
-                    for (float q = 0; q < 1.0 - p; q += step) {
+                for (float p = 0; p < 1.0; p += step)
+                {
+                    for (float q = 0; q < 1.0 - p; q += step)
+                    {
                         int x = p * triangle.pt1.x + q * triangle.pt2.x + (1.0 - p - q) * triangle.pt3.x;
                         int y = p * triangle.pt1.y + q * triangle.pt2.y + (1.0 - p - q) * triangle.pt3.y;
                         mask_tri(y, x) = idx + 1.0; // To distinguish from the label of non-triangulated areas
@@ -166,14 +184,19 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
         }
 
         cv::Mat_<float> priordepths = cv::Mat::zeros(height, width, CV_32FC1);
-        for (int i = 0; i < width; ++i) {
-            for (int j = 0; j < height; ++j) {
-                if (mask_tri(j, i) > 0) {
+        for (int i = 0; i < width; ++i)
+        {
+            for (int j = 0; j < height; ++j)
+            {
+                if (mask_tri(j, i) > 0)
+                {
                     float d = acmmp.GetDepthFromPlaneParam(planeParams_tri[mask_tri(j, i) - 1], i, j);
-                    if (d <= acmmp.GetMaxDepth() && d >= acmmp.GetMinDepth()) {
+                    if (d <= acmmp.GetMaxDepth() && d >= acmmp.GetMinDepth())
+                    {
                         priordepths(j, i) = d;
                     }
-                    else {
+                    else
+                    {
                         mask_tri(j, i) = 0;
                     }
                 }
@@ -185,8 +208,10 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
         acmmp.CudaPlanarPriorInitialization(planeParams_tri, mask_tri);
         acmmp.RunPatchMatch();
 
-        for (int col = 0; col < width; ++col) {
-            for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col)
+        {
+            for (int row = 0; row < height; ++row)
+            {
                 int center = row * width + col;
                 float4 plane_hypothesis = acmmp.GetPlaneHypothesis(center);
                 depths(row, col) = plane_hypothesis.w;
@@ -197,7 +222,8 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
     }
 
     std::string suffix = "/depths.dmb";
-    if (geom_consistency) {
+    if (geom_consistency)
+    {
         suffix = "/depths_geom.dmb";
     }
     std::string depth_path = result_folder + suffix;
@@ -231,10 +257,10 @@ void JointBilateralUpsampling(const std::string &dense_folder, const Problem &pr
     const int new_cols = std::round(image_float.cols * factor);
     const int new_rows = std::round(image_float.rows * factor);
     cv::Mat scaled_image_float;
-    cv::resize(image_float, scaled_image_float, cv::Size(new_cols,new_rows), 0, 0, cv::INTER_LINEAR);
+    cv::resize(image_float, scaled_image_float, cv::Size(new_cols, new_rows), 0, 0, cv::INTER_LINEAR);
 
-    std::cout << "Run JBU for image " << problem.ref_image_id <<  ".jpg" << std::endl;
-    RunJBU(scaled_image_float, ref_depth, dense_folder, problem );
+    std::cout << "Run JBU for image " << problem.ref_image_id << ".jpg" << std::endl;
+    RunJBU(scaled_image_float, ref_depth, dense_folder, problem);
 }
 
 void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, bool geom_consistency)
@@ -253,15 +279,16 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
     depths.clear();
     normals.clear();
     masks.clear();
-    
+
     std::map<int, int> image_id_2_index;
 
-    for (size_t i = 0; i < num_images; ++i) {
+    for (size_t i = 0; i < num_images; ++i)
+    {
         std::cout << "Reading image " << std::setw(8) << std::setfill('0') << i << "..." << std::endl;
         image_id_2_index[problems[i].ref_image_id] = i;
         std::stringstream image_path;
         image_path << image_folder << "/" << std::setw(8) << std::setfill('0') << problems[i].ref_image_id << ".jpg";
-        cv::Mat_<cv::Vec3b> image = cv::imread (image_path.str(), cv::IMREAD_COLOR);
+        cv::Mat_<cv::Vec3b> image = cv::imread(image_path.str(), cv::IMREAD_COLOR);
         std::stringstream cam_path;
         cam_path << cam_folder << "/" << std::setw(8) << std::setfill('0') << problems[i].ref_image_id << "_cam.txt";
         Camera camera = ReadCamera(cam_path.str());
@@ -270,7 +297,8 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
         result_path << dense_folder << "/ACMMP" << "/2333_" << std::setw(8) << std::setfill('0') << problems[i].ref_image_id;
         std::string result_folder = result_path.str();
         std::string suffix = "/depths.dmb";
-        if (geom_consistency) {
+        if (geom_consistency)
+        {
             suffix = "/depths_geom.dmb";
         }
         std::string depth_path = result_folder + suffix;
@@ -293,14 +321,17 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
     std::vector<PointList> PointCloud;
     PointCloud.clear();
 
-    for (size_t i = 0; i < num_images; ++i) {
+    for (size_t i = 0; i < num_images; ++i)
+    {
         std::cout << "Fusing image " << std::setw(8) << std::setfill('0') << i << "..." << std::endl;
         const int cols = depths[i].cols;
         const int rows = depths[i].rows;
         int num_ngb = problems[i].src_image_ids.size();
         std::vector<int2> used_list(num_ngb, make_int2(-1, -1));
-        for (int r =0; r < rows; ++r) {
-            for (int c = 0; c < cols; ++c) {
+        for (int r = 0; r < rows; ++r)
+        {
+            for (int c = 0; c < cols; ++c)
+            {
                 if (masks[i].at<uchar>(r, c) == 1)
                     continue;
                 float ref_depth = depths[i].at<float>(r, c);
@@ -316,7 +347,8 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
                 int num_consistent = 0;
                 float dynamic_consistency = 0;
 
-                for (int j = 0; j < num_ngb; ++j) {
+                for (int j = 0; j < num_ngb; ++j)
+                {
                     int src_id = image_id_2_index[problems[i].src_image_ids[j]];
                     const int src_cols = depths[src_id].cols;
                     const int src_rows = depths[src_id].rows;
@@ -325,7 +357,8 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
                     ProjectonCamera(PointX, cameras[src_id], point, proj_depth);
                     int src_r = int(point.y + 0.5f);
                     int src_c = int(point.x + 0.5f);
-                    if (src_c >= 0 && src_c < src_cols && src_r >= 0 && src_r < src_rows) {
+                    if (src_c >= 0 && src_c < src_cols && src_r >= 0 && src_r < src_rows)
+                    {
                         if (masks[src_id].at<uchar>(src_r, src_c) == 1)
                             continue;
 
@@ -341,15 +374,16 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
                         float relative_depth_diff = fabs(proj_depth - ref_depth) / ref_depth;
                         float angle = GetAngle(ref_normal, src_normal);
 
-                        if (reproj_error < 2.0f && relative_depth_diff < 0.01f && angle < 0.174533f) {
-                           /* consistent_Point.x += tmp_X.x;
-                            consistent_Point.y += tmp_X.y;
-                            consistent_Point.z += tmp_X.z;
-                            consistent_normal = consistent_normal + src_normal;
-                            consistent_Color[0] += images[src_id].at<cv::Vec3b>(src_r, src_c)[0];
-                            consistent_Color[1] += images[src_id].at<cv::Vec3b>(src_r, src_c)[1];
-                            consistent_Color[2] += images[src_id].at<cv::Vec3b>(src_r, src_c)[2];*/
-                           
+                        // if (reproj_error < 2.0f && relative_depth_diff < 0.01f && angle < 0.174533f)
+                        if (reproj_error < 2.0f && relative_depth_diff < 0.01f)
+                        {
+                            /* consistent_Point.x += tmp_X.x;
+                             consistent_Point.y += tmp_X.y;
+                             consistent_Point.z += tmp_X.z;
+                             consistent_normal = consistent_normal + src_normal;
+                             consistent_Color[0] += images[src_id].at<cv::Vec3b>(src_r, src_c)[0];
+                             consistent_Color[1] += images[src_id].at<cv::Vec3b>(src_r, src_c)[1];
+                             consistent_Color[2] += images[src_id].at<cv::Vec3b>(src_r, src_c)[2];*/
 
                             used_list[j].x = src_c;
                             used_list[j].y = src_r;
@@ -362,7 +396,9 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
                     }
                 }
 
-                if (num_consistent >= 1 && (dynamic_consistency > 0.3 * num_consistent)) {
+                // if (num_consistent >= 1 && (dynamic_consistency > 0.3 * num_consistent))
+                if (num_consistent >= 2)
+                {
                     /*consistent_Point.x /= (num_consistent + 1.0f);
                     consistent_Point.y /= (num_consistent + 1.0f);
                     consistent_Point.z /= (num_consistent + 1.0f);
@@ -375,7 +411,8 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
                     point3D.color = make_float3(consistent_Color[0], consistent_Color[1], consistent_Color[2]);
                     PointCloud.push_back(point3D);
 
-                    for (int j = 0; j < num_ngb; ++j) {
+                    for (int j = 0; j < num_ngb; ++j)
+                    {
                         if (used_list[j].x == -1)
                             continue;
                         masks[image_id_2_index[problems[i].src_image_ids[j]]].at<uchar>(used_list[j].y, used_list[j].x) = 1;
@@ -386,12 +423,16 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
     }
 
     std::string ply_path = dense_folder + "/ACMMP/ACMMP_model.ply";
-    StoreColorPlyFileBinaryPointCloud (ply_path, PointCloud);
+    StoreColorPlyFileBinaryPointCloud(ply_path, PointCloud);
 }
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
-    if (argc < 2) {
+
+    std::cout << 111 << std::endl;
+
+    if (argc < 2)
+    {
         std::cout << "USAGE: ACMMP dense_folder" << std::endl;
         return -1;
     }
@@ -408,66 +449,82 @@ int main(int argc, char** argv)
 
     int max_num_downscale = ComputeMultiScaleSettings(dense_folder, problems);
 
-     int flag = 0;
-     int geom_iterations = 2;
-     bool geom_consistency = false;
-     bool planar_prior = false;
-     bool hierarchy = false;
-     bool multi_geometry = false;
-     while (max_num_downscale >= 0) {
+    int flag = 0;
+    int geom_iterations = 2;
+    bool geom_consistency = false;
+    bool planar_prior = false;
+    bool hierarchy = false;
+    bool multi_geometry = false;
+    while (max_num_downscale >= 0)
+    {
         std::cout << "Scale: " << max_num_downscale << std::endl;
 
-        for (size_t i = 0; i < num_images; ++i) {
-            if (problems[i].num_downscale >= 0) {
+        for (size_t i = 0; i < num_images; ++i)
+        {
+            if (problems[i].num_downscale >= 0)
+            {
                 problems[i].cur_image_size = problems[i].max_image_size / pow(2, problems[i].num_downscale);
                 problems[i].num_downscale--;
             }
         }
 
-        if (flag == 0) {
+        if (flag == 0)
+        {
             flag = 1;
             geom_consistency = false;
             planar_prior = true;
-            for (size_t i = 0; i < num_images; ++i) {
+            for (size_t i = 0; i < num_images; ++i)
+            {
                 ProcessProblem(dense_folder, problems, i, geom_consistency, planar_prior, hierarchy);
             }
             geom_consistency = true;
             planar_prior = false;
-            for (int geom_iter = 0; geom_iter < geom_iterations; ++geom_iter) {
-                if (geom_iter == 0) {
+            for (int geom_iter = 0; geom_iter < geom_iterations; ++geom_iter)
+            {
+                if (geom_iter == 0)
+                {
                     multi_geometry = false;
                 }
-                else {
+                else
+                {
                     multi_geometry = true;
                 }
-                for (size_t i = 0; i < num_images; ++i) {
-                    ProcessProblem(dense_folder,  problems, i, geom_consistency, planar_prior, hierarchy, multi_geometry);
+                for (size_t i = 0; i < num_images; ++i)
+                {
+                    ProcessProblem(dense_folder, problems, i, geom_consistency, planar_prior, hierarchy, multi_geometry);
                 }
             }
         }
-        else {
-            for (size_t i = 0; i < num_images; ++i) {
-               JointBilateralUpsampling(dense_folder, problems[i], problems[i].cur_image_size);
-             }
+        else
+        {
+            for (size_t i = 0; i < num_images; ++i)
+            {
+                JointBilateralUpsampling(dense_folder, problems[i], problems[i].cur_image_size);
+            }
 
             hierarchy = true;
             geom_consistency = false;
             planar_prior = true;
-            for (size_t i = 0; i < num_images; ++i) {
-                ProcessProblem(dense_folder,  problems, i, geom_consistency, planar_prior, hierarchy);
+            for (size_t i = 0; i < num_images; ++i)
+            {
+                ProcessProblem(dense_folder, problems, i, geom_consistency, planar_prior, hierarchy);
             }
             hierarchy = false;
             geom_consistency = true;
             planar_prior = false;
-            for (int geom_iter = 0; geom_iter < geom_iterations; ++geom_iter) {
-                if (geom_iter == 0) {
+            for (int geom_iter = 0; geom_iter < geom_iterations; ++geom_iter)
+            {
+                if (geom_iter == 0)
+                {
                     multi_geometry = false;
                 }
-                else {
+                else
+                {
                     multi_geometry = true;
                 }
-                for (size_t i = 0; i < num_images; ++i) {
-                    ProcessProblem(dense_folder,  problems, i, geom_consistency, planar_prior, hierarchy, multi_geometry);
+                for (size_t i = 0; i < num_images; ++i)
+                {
+                    ProcessProblem(dense_folder, problems, i, geom_consistency, planar_prior, hierarchy, multi_geometry);
                 }
             }
         }

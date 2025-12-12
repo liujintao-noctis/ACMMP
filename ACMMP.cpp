@@ -2,98 +2,109 @@
 
 #include <cstdarg>
 
-void StringAppendV(std::string* dst, const char* format, va_list ap) {
-  // First try with a small fixed size buffer.
-  static const int kFixedBufferSize = 1024;
-  char fixed_buffer[kFixedBufferSize];
+void StringAppendV(std::string *dst, const char *format, va_list ap)
+{
+    // First try with a small fixed size buffer.
+    static const int kFixedBufferSize = 1024;
+    char fixed_buffer[kFixedBufferSize];
 
-  // It is possible for methods that use a va_list to invalidate
-  // the data in it upon use.  The fix is to make a copy
-  // of the structure before using it and use that copy instead.
-  va_list backup_ap;
-  va_copy(backup_ap, ap);
-  int result = vsnprintf(fixed_buffer, kFixedBufferSize, format, backup_ap);
-  va_end(backup_ap);
+    // It is possible for methods that use a va_list to invalidate
+    // the data in it upon use.  The fix is to make a copy
+    // of the structure before using it and use that copy instead.
+    va_list backup_ap;
+    va_copy(backup_ap, ap);
+    int result = vsnprintf(fixed_buffer, kFixedBufferSize, format, backup_ap);
+    va_end(backup_ap);
 
-  if (result < kFixedBufferSize) {
-    if (result >= 0) {
-      // Normal case - everything fits.
-      dst->append(fixed_buffer, result);
-      return;
-    }
+    if (result < kFixedBufferSize)
+    {
+        if (result >= 0)
+        {
+            // Normal case - everything fits.
+            dst->append(fixed_buffer, result);
+            return;
+        }
 
 #ifdef _MSC_VER
-    // Error or MSVC running out of space.  MSVC 8.0 and higher
-    // can be asked about space needed with the special idiom below:
-    va_copy(backup_ap, ap);
-    result = vsnprintf(nullptr, 0, format, backup_ap);
-    va_end(backup_ap);
+        // Error or MSVC running out of space.  MSVC 8.0 and higher
+        // can be asked about space needed with the special idiom below:
+        va_copy(backup_ap, ap);
+        result = vsnprintf(nullptr, 0, format, backup_ap);
+        va_end(backup_ap);
 #endif
 
-    if (result < 0) {
-      // Just an error.
-      return;
+        if (result < 0)
+        {
+            // Just an error.
+            return;
+        }
     }
-  }
 
-  // Increase the buffer size to the size requested by vsnprintf,
-  // plus one for the closing \0.
-  const int variable_buffer_size = result + 1;
-  std::unique_ptr<char> variable_buffer(new char[variable_buffer_size]);
+    // Increase the buffer size to the size requested by vsnprintf,
+    // plus one for the closing \0.
+    const int variable_buffer_size = result + 1;
+    std::unique_ptr<char> variable_buffer(new char[variable_buffer_size]);
 
-  // Restore the va_list before we use it again.
-  va_copy(backup_ap, ap);
-  result =
-      vsnprintf(variable_buffer.get(), variable_buffer_size, format, backup_ap);
-  va_end(backup_ap);
+    // Restore the va_list before we use it again.
+    va_copy(backup_ap, ap);
+    result =
+        vsnprintf(variable_buffer.get(), variable_buffer_size, format, backup_ap);
+    va_end(backup_ap);
 
-  if (result >= 0 && result < variable_buffer_size) {
-    dst->append(variable_buffer.get(), result);
-  }
+    if (result >= 0 && result < variable_buffer_size)
+    {
+        dst->append(variable_buffer.get(), result);
+    }
 }
 
-std::string StringPrintf(const char* format, ...) {
-  va_list ap;
-  va_start(ap, format);
-  std::string result;
-  StringAppendV(&result, format, ap);
-  va_end(ap);
-  return result;
+std::string StringPrintf(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    std::string result;
+    StringAppendV(&result, format, ap);
+    va_end(ap);
+    return result;
 }
 
-void CudaSafeCall(const cudaError_t error, const std::string& file,
-                  const int line) {
-  if (error != cudaSuccess) {
-    std::cerr << StringPrintf("%s in %s at line %i", cudaGetErrorString(error),
-                              file.c_str(), line)
-              << std::endl;
-    exit(EXIT_FAILURE);
-  }
+void CudaSafeCall(const cudaError_t error, const std::string &file,
+                  const int line)
+{
+    if (error != cudaSuccess)
+    {
+        std::cerr << StringPrintf("%s in %s at line %i", cudaGetErrorString(error),
+                                  file.c_str(), line)
+                  << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
-void CudaCheckError(const char* file, const int line) {
-  cudaError error = cudaGetLastError();
-  if (error != cudaSuccess) {
-    std::cerr << StringPrintf("cudaCheckError() failed at %s:%i : %s", file,
-                              line, cudaGetErrorString(error))
-              << std::endl;
-    exit(EXIT_FAILURE);
-  }
+void CudaCheckError(const char *file, const int line)
+{
+    cudaError error = cudaGetLastError();
+    if (error != cudaSuccess)
+    {
+        std::cerr << StringPrintf("cudaCheckError() failed at %s:%i : %s", file,
+                                  line, cudaGetErrorString(error))
+                  << std::endl;
+        exit(EXIT_FAILURE);
+    }
 
-  // More careful checking. However, this will affect performance.
-  // Comment away if needed.
-  error = cudaDeviceSynchronize();
-  if (cudaSuccess != error) {
-    std::cerr << StringPrintf("cudaCheckError() with sync failed at %s:%i : %s",
-                              file, line, cudaGetErrorString(error))
-              << std::endl;
-    std::cerr
-        << "This error is likely caused by the graphics card timeout "
-           "detection mechanism of your operating system. Please refer to "
-           "the FAQ in the documentation on how to solve this problem."
-        << std::endl;
-    exit(EXIT_FAILURE);
-  }
+    // More careful checking. However, this will affect performance.
+    // Comment away if needed.
+    error = cudaDeviceSynchronize();
+    if (cudaSuccess != error)
+    {
+        std::cerr << StringPrintf("cudaCheckError() with sync failed at %s:%i : %s",
+                                  file, line, cudaGetErrorString(error))
+                  << std::endl;
+        std::cerr
+            << "This error is likely caused by the graphics card timeout "
+               "detection mechanism of your operating system. Please refer to "
+               "the FAQ in the documentation on how to solve this problem."
+            << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
 ACMMP::ACMMP() {}
@@ -103,7 +114,8 @@ ACMMP::~ACMMP()
     delete[] plane_hypotheses_host;
     delete[] costs_host;
 
-    for (int i = 0; i < num_images; ++i) {
+    for (int i = 0; i < num_images; ++i)
+    {
         cudaDestroyTextureObject(texture_objects_host.images[i]);
         cudaFreeArray(cuArray[i]);
     }
@@ -116,15 +128,18 @@ ACMMP::~ACMMP()
     cudaFree(selected_views_cuda);
     cudaFree(depths_cuda);
 
-    if (params.geom_consistency) {
-        for (int i = 0; i < num_images; ++i) {
+    if (params.geom_consistency)
+    {
+        for (int i = 0; i < num_images; ++i)
+        {
             cudaDestroyTextureObject(texture_depths_host.images[i]);
             cudaFreeArray(cuDepthArray[i]);
         }
         cudaFree(texture_depths_cuda);
     }
 
-    if (params.hierarchy) {
+    if (params.hierarchy)
+    {
         delete[] scaled_plane_hypotheses_host;
         delete[] pre_costs_host;
 
@@ -132,14 +147,14 @@ ACMMP::~ACMMP()
         cudaFree(pre_costs_cuda);
     }
 
-    if (params.planar_prior) {
+    if (params.planar_prior)
+    {
         delete[] prior_planes_host;
         delete[] plane_masks_host;
 
         cudaFree(prior_planes_cuda);
         cudaFree(plane_masks_cuda);
     }
-
 }
 
 Camera ReadCamera(const std::string &cam_path)
@@ -150,7 +165,8 @@ Camera ReadCamera(const std::string &cam_path)
     std::string line;
     file >> line;
 
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i)
+    {
         file >> camera.R[3 * i + 0] >> camera.R[3 * i + 1] >> camera.R[3 * i + 2] >> camera.t[i];
     }
 
@@ -158,7 +174,8 @@ Camera ReadCamera(const std::string &cam_path)
     file >> tmp[0] >> tmp[1] >> tmp[2] >> tmp[3];
     file >> line;
 
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i)
+    {
         file >> camera.K[3 * i + 0] >> camera.K[3 * i + 1] >> camera.K[3 * i + 2];
     }
 
@@ -169,12 +186,13 @@ Camera ReadCamera(const std::string &cam_path)
     return camera;
 }
 
-void  RescaleImageAndCamera(cv::Mat_<cv::Vec3b> &src, cv::Mat_<cv::Vec3b> &dst, cv::Mat_<float> &depth, Camera &camera)
+void RescaleImageAndCamera(cv::Mat_<cv::Vec3b> &src, cv::Mat_<cv::Vec3b> &dst, cv::Mat_<float> &depth, Camera &camera)
 {
     const int cols = depth.cols;
     const int rows = depth.rows;
 
-    if (cols == src.cols && rows == src.rows) {
+    if (cols == src.cols && rows == src.rows)
+    {
         dst = src.clone();
         return;
     }
@@ -182,7 +200,7 @@ void  RescaleImageAndCamera(cv::Mat_<cv::Vec3b> &src, cv::Mat_<cv::Vec3b> &dst, 
     const float scale_x = cols / static_cast<float>(src.cols);
     const float scale_y = rows / static_cast<float>(src.rows);
 
-    cv::resize(src, dst, cv::Size(cols,rows), 0, 0, cv::INTER_LINEAR);
+    cv::resize(src, dst, cv::Size(cols, rows), 0, 0, cv::INTER_LINEAR);
 
     camera.K[0] *= scale_x;
     camera.K[2] *= scale_x;
@@ -241,12 +259,12 @@ void ProjectonCamera(const float3 PointX, const Camera camera, float2 &point, fl
     point.y = (camera.K[3] * tmp.x + camera.K[4] * tmp.y + camera.K[5] * tmp.z) / depth;
 }
 
-float GetAngle( const cv::Vec3f &v1, const cv::Vec3f &v2 )
+float GetAngle(const cv::Vec3f &v1, const cv::Vec3f &v2)
 {
     float dot_product = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
     float angle = acosf(dot_product);
-    //if angle is not a number the dot product was 1 and thus the two vectors should be identical --> return 0
-    if ( angle != angle )
+    // if angle is not a number the dot product was 1 and thus the two vectors should be identical --> return 0
+    if (angle != angle)
         return 0.0f;
 
     return angle;
@@ -256,7 +274,8 @@ int readDepthDmb(const std::string file_path, cv::Mat_<float> &depth)
 {
     FILE *inimage;
     inimage = fopen(file_path.c_str(), "rb");
-    if (!inimage){
+    if (!inimage)
+    {
         std::cout << "Error opening file " << file_path << std::endl;
         return -1;
     }
@@ -265,20 +284,21 @@ int readDepthDmb(const std::string file_path, cv::Mat_<float> &depth)
 
     type = -1;
 
-    fread(&type,sizeof(int32_t),1,inimage);
-    fread(&h,sizeof(int32_t),1,inimage);
-    fread(&w,sizeof(int32_t),1,inimage);
-    fread(&nb,sizeof(int32_t),1,inimage);
+    fread(&type, sizeof(int32_t), 1, inimage);
+    fread(&h, sizeof(int32_t), 1, inimage);
+    fread(&w, sizeof(int32_t), 1, inimage);
+    fread(&nb, sizeof(int32_t), 1, inimage);
 
-    if (type != 1) {
+    if (type != 1)
+    {
         fclose(inimage);
         return -1;
     }
 
-    int32_t dataSize = h*w*nb;
+    int32_t dataSize = h * w * nb;
 
-    depth = cv::Mat::zeros(h,w,CV_32F);
-    fread(depth.data,sizeof(float),dataSize,inimage);
+    depth = cv::Mat::zeros(h, w, CV_32F);
+    fread(depth.data, sizeof(float), dataSize, inimage);
 
     fclose(inimage);
     return 0;
@@ -288,7 +308,8 @@ int writeDepthDmb(const std::string file_path, const cv::Mat_<float> depth)
 {
     FILE *outimage;
     outimage = fopen(file_path.c_str(), "wb");
-    if (!outimage) {
+    if (!outimage)
+    {
         std::cout << "Error opening file " << file_path << std::endl;
     }
 
@@ -297,25 +318,26 @@ int writeDepthDmb(const std::string file_path, const cv::Mat_<float> depth)
     int32_t w = depth.cols;
     int32_t nb = 1;
 
-    fwrite(&type,sizeof(int32_t),1,outimage);
-    fwrite(&h,sizeof(int32_t),1,outimage);
-    fwrite(&w,sizeof(int32_t),1,outimage);
-    fwrite(&nb,sizeof(int32_t),1,outimage);
+    fwrite(&type, sizeof(int32_t), 1, outimage);
+    fwrite(&h, sizeof(int32_t), 1, outimage);
+    fwrite(&w, sizeof(int32_t), 1, outimage);
+    fwrite(&nb, sizeof(int32_t), 1, outimage);
 
-    float* data = (float*)depth.data;
+    float *data = (float *)depth.data;
 
-    int32_t datasize = w*h*nb;
-    fwrite(data,sizeof(float),datasize,outimage);
+    int32_t datasize = w * h * nb;
+    fwrite(data, sizeof(float), datasize, outimage);
 
     fclose(outimage);
     return 0;
 }
 
-int readNormalDmb (const std::string file_path, cv::Mat_<cv::Vec3f> &normal)
+int readNormalDmb(const std::string file_path, cv::Mat_<cv::Vec3f> &normal)
 {
     FILE *inimage;
     inimage = fopen(file_path.c_str(), "rb");
-    if (!inimage) {
+    if (!inimage)
+    {
         std::cout << "Error opening file " << file_path << std::endl;
         return -1;
     }
@@ -324,20 +346,21 @@ int readNormalDmb (const std::string file_path, cv::Mat_<cv::Vec3f> &normal)
 
     type = -1;
 
-    fread(&type,sizeof(int32_t),1,inimage);
-    fread(&h,sizeof(int32_t),1,inimage);
-    fread(&w,sizeof(int32_t),1,inimage);
-    fread(&nb,sizeof(int32_t),1,inimage);
+    fread(&type, sizeof(int32_t), 1, inimage);
+    fread(&h, sizeof(int32_t), 1, inimage);
+    fread(&w, sizeof(int32_t), 1, inimage);
+    fread(&nb, sizeof(int32_t), 1, inimage);
 
-    if (type != 1) {
+    if (type != 1)
+    {
         fclose(inimage);
         return -1;
     }
 
-    int32_t dataSize = h*w*nb;
+    int32_t dataSize = h * w * nb;
 
-    normal = cv::Mat::zeros(h,w,CV_32FC3);
-    fread(normal.data,sizeof(float),dataSize,inimage);
+    normal = cv::Mat::zeros(h, w, CV_32FC3);
+    fread(normal.data, sizeof(float), dataSize, inimage);
 
     fclose(inimage);
     return 0;
@@ -347,40 +370,41 @@ int writeNormalDmb(const std::string file_path, const cv::Mat_<cv::Vec3f> normal
 {
     FILE *outimage;
     outimage = fopen(file_path.c_str(), "wb");
-    if (!outimage) {
+    if (!outimage)
+    {
         std::cout << "Error opening file " << file_path << std::endl;
     }
 
-    int32_t type = 1; //float
+    int32_t type = 1; // float
     int32_t h = normal.rows;
     int32_t w = normal.cols;
     int32_t nb = 3;
 
-    fwrite(&type,sizeof(int32_t),1,outimage);
-    fwrite(&h,sizeof(int32_t),1,outimage);
-    fwrite(&w,sizeof(int32_t),1,outimage);
-    fwrite(&nb,sizeof(int32_t),1,outimage);
+    fwrite(&type, sizeof(int32_t), 1, outimage);
+    fwrite(&h, sizeof(int32_t), 1, outimage);
+    fwrite(&w, sizeof(int32_t), 1, outimage);
+    fwrite(&nb, sizeof(int32_t), 1, outimage);
 
-    float* data = (float*)normal.data;
+    float *data = (float *)normal.data;
 
-    int32_t datasize = w*h*nb;
-    fwrite(data,sizeof(float),datasize,outimage);
+    int32_t datasize = w * h * nb;
+    fwrite(data, sizeof(float), datasize, outimage);
 
     fclose(outimage);
     return 0;
 }
 
-void StoreColorPlyFileBinaryPointCloud (const std::string &plyFilePath, const std::vector<PointList> &pc)
+void StoreColorPlyFileBinaryPointCloud(const std::string &plyFilePath, const std::vector<PointList> &pc)
 {
     std::cout << "store 3D points to ply file" << std::endl;
 
     FILE *outputPly;
-    outputPly=fopen(plyFilePath.c_str(), "wb");
+    outputPly = fopen(plyFilePath.c_str(), "wb");
 
     /*write header*/
     fprintf(outputPly, "ply\n");
     fprintf(outputPly, "format binary_little_endian 1.0\n");
-    fprintf(outputPly, "element vertex %d\n",pc.size());
+    fprintf(outputPly, "element vertex %d\n", pc.size());
     fprintf(outputPly, "property float x\n");
     fprintf(outputPly, "property float y\n");
     fprintf(outputPly, "property float z\n");
@@ -392,9 +416,10 @@ void StoreColorPlyFileBinaryPointCloud (const std::string &plyFilePath, const st
     fprintf(outputPly, "property uchar blue\n");
     fprintf(outputPly, "end_header\n");
 
-    //write data
+    // write data
 #pragma omp parallel for
-    for(size_t i = 0; i < pc.size(); i++) {
+    for (size_t i = 0; i < pc.size(); i++)
+    {
         const PointList &p = pc[i];
         float3 X = p.coord;
         const float3 normal = p.normal;
@@ -403,24 +428,24 @@ void StoreColorPlyFileBinaryPointCloud (const std::string &plyFilePath, const st
         const char g_color = (int)color.y;
         const char r_color = (int)color.z;
 
-        if(!(X.x < FLT_MAX && X.x > -FLT_MAX) || !(X.y < FLT_MAX && X.y > -FLT_MAX) || !(X.z < FLT_MAX && X.z >= -FLT_MAX)){
+        if (!(X.x < FLT_MAX && X.x > -FLT_MAX) || !(X.y < FLT_MAX && X.y > -FLT_MAX) || !(X.z < FLT_MAX && X.z >= -FLT_MAX))
+        {
             X.x = 0.0f;
             X.y = 0.0f;
             X.z = 0.0f;
         }
 #pragma omp critical
         {
-            fwrite(&X.x,      sizeof(X.x), 1, outputPly);
-            fwrite(&X.y,      sizeof(X.y), 1, outputPly);
-            fwrite(&X.z,      sizeof(X.z), 1, outputPly);
+            fwrite(&X.x, sizeof(X.x), 1, outputPly);
+            fwrite(&X.y, sizeof(X.y), 1, outputPly);
+            fwrite(&X.z, sizeof(X.z), 1, outputPly);
             fwrite(&normal.x, sizeof(normal.x), 1, outputPly);
             fwrite(&normal.y, sizeof(normal.y), 1, outputPly);
             fwrite(&normal.z, sizeof(normal.z), 1, outputPly);
-            fwrite(&r_color,  sizeof(char), 1, outputPly);
-            fwrite(&g_color,  sizeof(char), 1, outputPly);
-            fwrite(&b_color,  sizeof(char), 1, outputPly);
+            fwrite(&r_color, sizeof(char), 1, outputPly);
+            fwrite(&g_color, sizeof(char), 1, outputPly);
+            fwrite(&b_color, sizeof(char), 1, outputPly);
         }
-
     }
     fclose(outputPly);
 }
@@ -435,12 +460,13 @@ static float GetDisparity(const Camera &camera, const int2 &p, const float &dept
     return std::sqrt(point3D[0] * point3D[0] + point3D[1] * point3D[1] + point3D[2] * point3D[2]);
 }
 
-void ACMMP::SetGeomConsistencyParams(bool multi_geometry=false)
+void ACMMP::SetGeomConsistencyParams(bool multi_geometry = false)
 {
     params.geom_consistency = true;
     params.max_iterations = 2;
-    if (multi_geometry) {
-       params.multi_geometry = true;
+    if (multi_geometry)
+    {
+        params.multi_geometry = true;
     }
 }
 
@@ -477,7 +503,8 @@ void ACMMP::InuputInitialization(const std::string &dense_folder, const std::vec
     cameras.push_back(camera);
 
     size_t num_src_images = problem.src_image_ids.size();
-    for (size_t i = 0; i < num_src_images; ++i) {
+    for (size_t i = 0; i < num_src_images; ++i)
+    {
         std::stringstream image_path;
         image_path << image_folder << "/" << std::setw(8) << std::setfill('0') << problem.src_image_ids[i] << ".jpg";
         cv::Mat_<uint8_t> image_uint = cv::imread(image_path.str(), cv::IMREAD_GRAYSCALE);
@@ -494,12 +521,15 @@ void ACMMP::InuputInitialization(const std::string &dense_folder, const std::vec
 
     // Scale cameras and images
     int max_image_size = problems[idx].cur_image_size;
-    for (size_t i = 0; i < images.size(); ++i) {
-        if (i > 0) {
+    for (size_t i = 0; i < images.size(); ++i)
+    {
+        if (i > 0)
+        {
             max_image_size = problems[problem.src_image_ids[i - 1]].cur_image_size;
         }
 
-        if (images[i].cols <= max_image_size && images[i].rows <= max_image_size) {
+        if (images[i].cols <= max_image_size && images[i].rows <= max_image_size)
+        {
             continue;
         }
 
@@ -514,7 +544,7 @@ void ACMMP::InuputInitialization(const std::string &dense_folder, const std::vec
         const float scale_y = new_rows / static_cast<float>(images[i].rows);
 
         cv::Mat_<float> scaled_image_float;
-        cv::resize(images[i], scaled_image_float, cv::Size(new_cols,new_rows), 0, 0, cv::INTER_LINEAR);
+        cv::resize(images[i], scaled_image_float, cv::Size(new_cols, new_rows), 0, 0, cv::INTER_LINEAR);
         images[i] = scaled_image_float.clone();
 
         cameras[i].K[0] *= scale_x;
@@ -533,14 +563,16 @@ void ACMMP::InuputInitialization(const std::string &dense_folder, const std::vec
     params.disparity_min = cameras[0].K[0] * params.baseline / params.depth_max;
     params.disparity_max = cameras[0].K[0] * params.baseline / params.depth_min;
 
-    if (params.geom_consistency) {
+    if (params.geom_consistency)
+    {
         depths.clear();
 
         std::stringstream result_path;
         result_path << dense_folder << "/ACMMP" << "/2333_" << std::setw(8) << std::setfill('0') << problem.ref_image_id;
         std::string result_folder = result_path.str();
         std::string suffix = "/depths.dmb";
-        if (params.multi_geometry) {
+        if (params.multi_geometry)
+        {
             suffix = "/depths_geom.dmb";
         }
         std::string depth_path = result_folder + suffix;
@@ -549,7 +581,8 @@ void ACMMP::InuputInitialization(const std::string &dense_folder, const std::vec
         depths.push_back(ref_depth);
 
         size_t num_src_images = problem.src_image_ids.size();
-        for (size_t i = 0; i < num_src_images; ++i) {
+        for (size_t i = 0; i < num_src_images; ++i)
+        {
             std::stringstream result_path;
             result_path << dense_folder << "/ACMMP" << "/2333_" << std::setw(8) << std::setfill('0') << problem.src_image_ids[i];
             std::string result_folder = result_path.str();
@@ -565,13 +598,14 @@ void ACMMP::CudaSpaceInitialization(const std::string &dense_folder, const Probl
 {
     num_images = (int)images.size();
 
-    for (int i = 0; i < num_images; ++i) {
+    for (int i = 0; i < num_images; ++i)
+    {
         int rows = images[i].rows;
         int cols = images[i].cols;
 
         cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
         cudaMallocArray(&cuArray[i], &channelDesc, cols, rows);
-        cudaMemcpy2DToArray (cuArray[i], 0, 0, images[i].ptr<float>(), images[i].step[0], cols*sizeof(float), rows, cudaMemcpyHostToDevice);
+        cudaMemcpy2DToArray(cuArray[i], 0, 0, images[i].ptr<float>(), images[i].step[0], cols * sizeof(float), rows, cudaMemcpyHostToDevice);
 
         struct cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(cudaResourceDesc));
@@ -583,37 +617,39 @@ void ACMMP::CudaSpaceInitialization(const std::string &dense_folder, const Probl
         texDesc.addressMode[0] = cudaAddressModeWrap;
         texDesc.addressMode[1] = cudaAddressModeWrap;
         texDesc.filterMode = cudaFilterModeLinear;
-        texDesc.readMode  = cudaReadModeElementType;
+        texDesc.readMode = cudaReadModeElementType;
         texDesc.normalizedCoords = 0;
 
         cudaCreateTextureObject(&(texture_objects_host.images[i]), &resDesc, &texDesc, NULL);
     }
-    cudaMalloc((void**)&texture_objects_cuda, sizeof(cudaTextureObjects));
+    cudaMalloc((void **)&texture_objects_cuda, sizeof(cudaTextureObjects));
     cudaMemcpy(texture_objects_cuda, &texture_objects_host, sizeof(cudaTextureObjects), cudaMemcpyHostToDevice);
 
-    cudaMalloc((void**)&cameras_cuda, sizeof(Camera) * (num_images));
+    cudaMalloc((void **)&cameras_cuda, sizeof(Camera) * (num_images));
     cudaMemcpy(cameras_cuda, &cameras[0], sizeof(Camera) * (num_images), cudaMemcpyHostToDevice);
 
     plane_hypotheses_host = new float4[cameras[0].height * cameras[0].width];
-    cudaMalloc((void**)&plane_hypotheses_cuda, sizeof(float4) * (cameras[0].height * cameras[0].width));
+    cudaMalloc((void **)&plane_hypotheses_cuda, sizeof(float4) * (cameras[0].height * cameras[0].width));
 
     costs_host = new float[cameras[0].height * cameras[0].width];
-    cudaMalloc((void**)&costs_cuda, sizeof(float) * (cameras[0].height * cameras[0].width));
-    cudaMalloc((void**)&pre_costs_cuda, sizeof(float) * (cameras[0].height * cameras[0].width));
+    cudaMalloc((void **)&costs_cuda, sizeof(float) * (cameras[0].height * cameras[0].width));
+    cudaMalloc((void **)&pre_costs_cuda, sizeof(float) * (cameras[0].height * cameras[0].width));
 
-    cudaMalloc((void**)&rand_states_cuda, sizeof(curandState) * (cameras[0].height * cameras[0].width));
-    cudaMalloc((void**)&selected_views_cuda, sizeof(unsigned int) * (cameras[0].height * cameras[0].width));
+    cudaMalloc((void **)&rand_states_cuda, sizeof(curandState) * (cameras[0].height * cameras[0].width));
+    cudaMalloc((void **)&selected_views_cuda, sizeof(unsigned int) * (cameras[0].height * cameras[0].width));
 
-    cudaMalloc((void**)&depths_cuda, sizeof(float) * (cameras[0].height * cameras[0].width));
+    cudaMalloc((void **)&depths_cuda, sizeof(float) * (cameras[0].height * cameras[0].width));
 
-    if (params.geom_consistency) {
-        for (int i = 0; i < num_images; ++i) {
+    if (params.geom_consistency)
+    {
+        for (int i = 0; i < num_images; ++i)
+        {
             int rows = depths[i].rows;
             int cols = depths[i].cols;
 
             cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
             cudaMallocArray(&cuDepthArray[i], &channelDesc, cols, rows);
-            cudaMemcpy2DToArray (cuDepthArray[i], 0, 0, depths[i].ptr<float>(), depths[i].step[0], cols*sizeof(float), rows, cudaMemcpyHostToDevice);
+            cudaMemcpy2DToArray(cuDepthArray[i], 0, 0, depths[i].ptr<float>(), depths[i].step[0], cols * sizeof(float), rows, cudaMemcpyHostToDevice);
 
             struct cudaResourceDesc resDesc;
             memset(&resDesc, 0, sizeof(cudaResourceDesc));
@@ -625,19 +661,20 @@ void ACMMP::CudaSpaceInitialization(const std::string &dense_folder, const Probl
             texDesc.addressMode[0] = cudaAddressModeWrap;
             texDesc.addressMode[1] = cudaAddressModeWrap;
             texDesc.filterMode = cudaFilterModeLinear;
-            texDesc.readMode  = cudaReadModeElementType;
+            texDesc.readMode = cudaReadModeElementType;
             texDesc.normalizedCoords = 0;
 
             cudaCreateTextureObject(&(texture_depths_host.images[i]), &resDesc, &texDesc, NULL);
         }
-        cudaMalloc((void**)&texture_depths_cuda, sizeof(cudaTextureObjects));
+        cudaMalloc((void **)&texture_depths_cuda, sizeof(cudaTextureObjects));
         cudaMemcpy(texture_depths_cuda, &texture_depths_host, sizeof(cudaTextureObjects), cudaMemcpyHostToDevice);
 
         std::stringstream result_path;
         result_path << dense_folder << "/ACMMP" << "/2333_" << std::setw(8) << std::setfill('0') << problem.ref_image_id;
         std::string result_folder = result_path.str();
         std::string suffix = "/depths.dmb";
-        if (params.multi_geometry) {
+        if (params.multi_geometry)
+        {
             suffix = "/depths_geom.dmb";
         }
         std::string depth_path = result_folder + suffix;
@@ -652,8 +689,10 @@ void ACMMP::CudaSpaceInitialization(const std::string &dense_folder, const Probl
         readDepthDmb(cost_path, ref_cost);
         int width = ref_depth.cols;
         int height = ref_depth.rows;
-        for (int col = 0; col < width; ++col) {
-            for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col)
+        {
+            for (int row = 0; row < height; ++row)
+            {
                 int center = row * width + col;
                 float4 plane_hypothesis;
                 plane_hypothesis.x = ref_normal(row, col)[0];
@@ -668,7 +707,8 @@ void ACMMP::CudaSpaceInitialization(const std::string &dense_folder, const Probl
         cudaMemcpy(costs_cuda, costs_host, sizeof(float) * width * height, cudaMemcpyHostToDevice);
     }
 
-    if (params.hierarchy) {
+    if (params.hierarchy)
+    {
         std::stringstream result_path;
         result_path << dense_folder << "/ACMMP" << "/2333_" << std::setw(8) << std::setfill('0') << problem.ref_image_id;
         std::string result_folder = result_path.str();
@@ -684,37 +724,45 @@ void ACMMP::CudaSpaceInitialization(const std::string &dense_folder, const Probl
         readDepthDmb(cost_path, ref_cost);
         int width = ref_normal.cols;
         int height = ref_normal.rows;
-        scaled_plane_hypotheses_host= new float4[height * width];
-        cudaMalloc((void**)&scaled_plane_hypotheses_cuda, sizeof(float4) * height * width);
+        scaled_plane_hypotheses_host = new float4[height * width];
+        cudaMalloc((void **)&scaled_plane_hypotheses_cuda, sizeof(float4) * height * width);
         pre_costs_host = new float[height * width];
-        cudaMalloc((void**)&pre_costs_cuda, sizeof(float) * cameras[0].height * cameras[0].width);
-        if (width !=images[0]. rows || height != images[0].cols) {
+        cudaMalloc((void **)&pre_costs_cuda, sizeof(float) * cameras[0].height * cameras[0].width);
+        if (width != images[0].rows || height != images[0].cols)
+        {
             params.upsample = true;
             params.scaled_cols = width;
             params.scaled_rows = height;
         }
-        else {
+        else
+        {
             params.upsample = false;
         }
-        for (int col = 0; col < width; ++col) {
-            for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col)
+        {
+            for (int row = 0; row < height; ++row)
+            {
                 int center = row * width + col;
                 float4 plane_hypothesis;
                 plane_hypothesis.x = ref_normal(row, col)[0];
                 plane_hypothesis.y = ref_normal(row, col)[1];
                 plane_hypothesis.z = ref_normal(row, col)[2];
-                if (params.upsample) {
+                if (params.upsample)
+                {
                     plane_hypothesis.w = ref_cost(row, col);
                 }
-                else {
+                else
+                {
                     plane_hypothesis.w = ref_depth(row, col);
                 }
                 scaled_plane_hypotheses_host[center] = plane_hypothesis;
             }
         }
 
-        for (int col = 0; col < cameras[0].width; ++col) {
-            for (int row = 0; row < cameras[0].height; ++row) {
+        for (int col = 0; col < cameras[0].width; ++col)
+        {
+            for (int row = 0; row < cameras[0].height; ++row)
+            {
                 int center = row * cameras[0].width + col;
                 float4 plane_hypothesis;
                 plane_hypothesis.w = ref_depth(row, col);
@@ -730,16 +778,19 @@ void ACMMP::CudaSpaceInitialization(const std::string &dense_folder, const Probl
 void ACMMP::CudaPlanarPriorInitialization(const std::vector<float4> &PlaneParams, const cv::Mat_<float> &masks)
 {
     prior_planes_host = new float4[cameras[0].height * cameras[0].width];
-    cudaMalloc((void**)&prior_planes_cuda, sizeof(float4) * (cameras[0].height * cameras[0].width));
+    cudaMalloc((void **)&prior_planes_cuda, sizeof(float4) * (cameras[0].height * cameras[0].width));
 
     plane_masks_host = new unsigned int[cameras[0].height * cameras[0].width];
-    cudaMalloc((void**)&plane_masks_cuda, sizeof(unsigned int) * (cameras[0].height * cameras[0].width));
+    cudaMalloc((void **)&plane_masks_cuda, sizeof(unsigned int) * (cameras[0].height * cameras[0].width));
 
-    for (int i = 0; i < cameras[0].width; ++i) {
-        for (int j = 0; j < cameras[0].height; ++j) {
+    for (int i = 0; i < cameras[0].width; ++i)
+    {
+        for (int j = 0; j < cameras[0].height; ++j)
+        {
             int center = j * cameras[0].width + i;
             plane_masks_host[center] = (unsigned int)masks(j, i);
-            if (masks(j, i) > 0) {
+            if (masks(j, i) > 0)
+            {
                 prior_planes_host[center] = PlaneParams[masks(j, i) - 1];
             }
         }
@@ -784,37 +835,44 @@ float ACMMP::GetMaxDepth()
     return params.depth_max;
 }
 
-void ACMMP::GetSupportPoints(std::vector<cv::Point>& support2DPoints)
+void ACMMP::GetSupportPoints(std::vector<cv::Point> &support2DPoints)
 {
     support2DPoints.clear();
     const int step_size = 5;
     const int width = GetReferenceImageWidth();
     const int height = GetReferenceImageHeight();
-    for (int col = 0; col < width; col += step_size) {
-        for (int row = 0; row < height; row += step_size) {
+    for (int col = 0; col < width; col += step_size)
+    {
+        for (int row = 0; row < height; row += step_size)
+        {
             float min_cost = 2.0f;
             cv::Point temp_point;
             int c_bound = std::min(width, col + step_size);
             int r_bound = std::min(height, row + step_size);
-            for (int c = col; c < c_bound; ++c) {
-                for (int r = row; r < r_bound; ++r) {
+            for (int c = col; c < c_bound; ++c)
+            {
+                for (int r = row; r < r_bound; ++r)
+                {
                     int center = r * width + c;
-                    if (GetCost(center) < 2.0f && min_cost > GetCost(center)) {
+                    if (GetCost(center) < 2.0f && min_cost > GetCost(center))
+                    {
                         temp_point = cv::Point(c, r);
                         min_cost = GetCost(center);
                     }
                 }
             }
-            if (min_cost < 0.1f) {
+            if (min_cost < 0.1f)
+            {
                 support2DPoints.push_back(temp_point);
             }
         }
     }
 }
 
-std::vector<Triangle> ACMMP::DelaunayTriangulation(const cv::Rect boundRC, const std::vector<cv::Point>& points)
+std::vector<Triangle> ACMMP::DelaunayTriangulation(const cv::Rect boundRC, const std::vector<cv::Point> &points)
 {
-    if (points.empty()) {
+    if (points.empty())
+    {
         return std::vector<Triangle>();
     }
 
@@ -822,12 +880,14 @@ std::vector<Triangle> ACMMP::DelaunayTriangulation(const cv::Rect boundRC, const
 
     std::vector<cv::Vec6f> temp_results;
     cv::Subdiv2D subdiv2d(boundRC);
-    for (const auto point : points) {
+    for (const auto point : points)
+    {
         subdiv2d.insert(cv::Point2f((float)point.x, (float)point.y));
     }
     subdiv2d.getTriangleList(temp_results);
 
-    for (const auto temp_vec : temp_results) {
+    for (const auto temp_vec : temp_results)
+    {
         cv::Point pt1((int)temp_vec[0], (int)temp_vec[1]);
         cv::Point pt2((int)temp_vec[2], (int)temp_vec[3]);
         cv::Point pt3((int)temp_vec[4], (int)temp_vec[5]);
@@ -860,7 +920,8 @@ float4 ACMMP::GetPriorPlaneParams(const Triangle triangle, const cv::Mat_<float>
     cv::SVD::solveZ(A, B);
     float4 n4 = make_float4(B.at<float>(0, 0), B.at<float>(1, 0), B.at<float>(2, 0), B.at<float>(3, 0));
     float norm2 = sqrt(pow(n4.x, 2) + pow(n4.y, 2) + pow(n4.z, 2));
-    if (n4.w < 0) {
+    if (n4.w < 0)
+    {
         norm2 *= -1;
     }
     n4.x /= norm2;
@@ -876,31 +937,32 @@ float ACMMP::GetDepthFromPlaneParam(const float4 plane_hypothesis, const int x, 
     return -plane_hypothesis.w * cameras[0].K[0] / ((x - cameras[0].K[2]) * plane_hypothesis.x + (cameras[0].K[0] / cameras[0].K[4]) * (y - cameras[0].K[5]) * plane_hypothesis.y + cameras[0].K[0] * plane_hypothesis.z);
 }
 
- void JBUAddImageToTextureFloatGray ( std::vector<cv::Mat_<float>>  &imgs, cudaTextureObject_t texs[], cudaArray *cuArray[], const int &numSelViews)
+void JBUAddImageToTextureFloatGray(std::vector<cv::Mat_<float>> &imgs, cudaTextureObject_t texs[], cudaArray *cuArray[], const int &numSelViews)
 {
-    for (int i=0; i<numSelViews; i++) {
+    for (int i = 0; i < numSelViews; i++)
+    {
         int index = i;
         int rows = imgs[index].rows;
         int cols = imgs[index].cols;
         // Create channel with floating point type
-        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc (32, 0, 0,  0, cudaChannelFormatKindFloat);
+        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
         // Allocate array with correct size and number of channels
         cudaMallocArray(&cuArray[i], &channelDesc, cols, rows);
-        cudaMemcpy2DToArray (cuArray[i], 0, 0, imgs[index].ptr<float>(), imgs[index].step[0], cols*sizeof(float), rows, cudaMemcpyHostToDevice);
+        cudaMemcpy2DToArray(cuArray[i], 0, 0, imgs[index].ptr<float>(), imgs[index].step[0], cols * sizeof(float), rows, cudaMemcpyHostToDevice);
 
         // Specify texture
         struct cudaResourceDesc resDesc;
         memset(&resDesc, 0, sizeof(cudaResourceDesc));
-        resDesc.resType         = cudaResourceTypeArray;
+        resDesc.resType = cudaResourceTypeArray;
         resDesc.res.array.array = cuArray[i];
 
         // Specify texture object parameters
         struct cudaTextureDesc texDesc;
         memset(&texDesc, 0, sizeof(cudaTextureDesc));
-        texDesc.addressMode[0]   = cudaAddressModeWrap;
-        texDesc.addressMode[1]   = cudaAddressModeWrap;
-        texDesc.filterMode       = cudaFilterModeLinear;
-        texDesc.readMode         = cudaReadModeElementType;
+        texDesc.addressMode[0] = cudaAddressModeWrap;
+        texDesc.addressMode[1] = cudaAddressModeWrap;
+        texDesc.filterMode = cudaFilterModeLinear;
+        texDesc.readMode = cudaReadModeElementType;
         texDesc.normalizedCoords = 0;
 
         // Create texture object
@@ -909,43 +971,44 @@ float ACMMP::GetDepthFromPlaneParam(const float4 plane_hypothesis, const int x, 
     return;
 }
 
- JBU::JBU(){}
+JBU::JBU() {}
 
- JBU::~JBU()
- {
-     free(depth_h);
+JBU::~JBU()
+{
+    free(depth_h);
 
-     cudaFree(depth_d);
-     cudaFree(jp_d);
-     cudaFree(jt_d);
- }
+    cudaFree(depth_d);
+    cudaFree(jp_d);
+    cudaFree(jt_d);
+}
 
- void JBU::InitializeParameters(int n)
- {
-     depth_h = (float*)malloc(sizeof(float) * n);
+void JBU::InitializeParameters(int n)
+{
+    depth_h = (float *)malloc(sizeof(float) * n);
 
-     cudaMalloc ((void**)&depth_d,  sizeof(float) * n);
+    cudaMalloc((void **)&depth_d, sizeof(float) * n);
 
-     cudaMalloc((void**)&jp_d, sizeof(JBUParameters) * 1);
-     cudaMemcpy(jp_d, &jp_h, sizeof(JBUParameters) * 1, cudaMemcpyHostToDevice);
+    cudaMalloc((void **)&jp_d, sizeof(JBUParameters) * 1);
+    cudaMemcpy(jp_d, &jp_h, sizeof(JBUParameters) * 1, cudaMemcpyHostToDevice);
 
-     cudaMalloc((void**)&jt_d, sizeof(JBUTexObj) * 1);
-     cudaMemcpy(jt_d, &jt_h, sizeof(JBUTexObj) * 1, cudaMemcpyHostToDevice);
-     cudaDeviceSynchronize();
- }
+    cudaMalloc((void **)&jt_d, sizeof(JBUTexObj) * 1);
+    cudaMemcpy(jt_d, &jt_h, sizeof(JBUTexObj) * 1, cudaMemcpyHostToDevice);
+    cudaDeviceSynchronize();
+}
 
-void RunJBU(const cv::Mat_<float>  &scaled_image_float, const cv::Mat_<float> &src_depthmap, const std::string &dense_folder , const Problem &problem)
+void RunJBU(const cv::Mat_<float> &scaled_image_float, const cv::Mat_<float> &src_depthmap, const std::string &dense_folder, const Problem &problem)
 {
     uint32_t rows = scaled_image_float.rows;
     uint32_t cols = scaled_image_float.cols;
     int Imagescale = std::max(scaled_image_float.rows / src_depthmap.rows, scaled_image_float.cols / src_depthmap.cols);
 
-    if (Imagescale == 1) {
+    if (Imagescale == 1)
+    {
         std::cout << "Image.rows = Depthmap.rows" << std::endl;
         return;
     }
 
-    std::vector<cv::Mat_<float> > imgs(JBU_NUM);
+    std::vector<cv::Mat_<float>> imgs(JBU_NUM);
     imgs[0] = scaled_image_float.clone();
     imgs[1] = src_depthmap.clone();
 
@@ -960,15 +1023,18 @@ void RunJBU(const cv::Mat_<float>  &scaled_image_float, const cv::Mat_<float> &s
     jbu.InitializeParameters(rows * cols);
     jbu.CudaRun();
 
-    cv::Mat_<float> depthmap = cv::Mat::zeros( rows, cols, CV_32FC1 );
+    cv::Mat_<float> depthmap = cv::Mat::zeros(rows, cols, CV_32FC1);
 
-    for (uint32_t i = 0; i < cols; ++i) {
-        for(uint32_t j = 0; j < rows; ++j) {
+    for (uint32_t i = 0; i < cols; ++i)
+    {
+        for (uint32_t j = 0; j < rows; ++j)
+        {
             int center = i + cols * j;
-            if (jbu.depth_h[center] != jbu.depth_h[center]) {
-                std::cout << "wrong!" << std::endl;
+            if (jbu.depth_h[center] != jbu.depth_h[center])
+            {
+                // std::cout << "wrong!" << std::endl;
             }
-            depthmap (j, i) = jbu.depth_h[center];
+            depthmap(j, i) = jbu.depth_h[center];
         }
     }
 
@@ -978,11 +1044,12 @@ void RunJBU(const cv::Mat_<float>  &scaled_image_float, const cv::Mat_<float> &s
     std::string result_folder = result_path.str();
     mkdir(result_folder.c_str(), 0777);
     std::string depth_path = result_folder + "/depths.dmb";
-    writeDepthDmb ( depth_path, disp0 );
+    writeDepthDmb(depth_path, disp0);
 
-    for (int i=0; i < JBU_NUM; i++) {
-        CUDA_SAFE_CALL( cudaDestroyTextureObject(jbu.jt_h.imgs[i]) );
-        CUDA_SAFE_CALL( cudaFreeArray(jbu.cuArray[i]) );
+    for (int i = 0; i < JBU_NUM; i++)
+    {
+        CUDA_SAFE_CALL(cudaDestroyTextureObject(jbu.jt_h.imgs[i]));
+        CUDA_SAFE_CALL(cudaFreeArray(jbu.cuArray[i]));
     }
     cudaDeviceSynchronize();
 }

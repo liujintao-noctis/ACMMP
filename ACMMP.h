@@ -9,29 +9,31 @@ int writeDepthDmb(const std::string file_path, const cv::Mat_<float> depth);
 int writeNormalDmb(const std::string file_path, const cv::Mat_<cv::Vec3f> normal);
 
 Camera ReadCamera(const std::string &cam_path);
-void  RescaleImageAndCamera(cv::Mat_<cv::Vec3b> &src, cv::Mat_<cv::Vec3b> &dst, cv::Mat_<float> &depth, Camera &camera);
+void RescaleImageAndCamera(cv::Mat_<cv::Vec3b> &src, cv::Mat_<cv::Vec3b> &dst, cv::Mat_<float> &depth, Camera &camera);
 float3 Get3DPointonWorld(const int x, const int y, const float depth, const Camera camera);
 void ProjectonCamera(const float3 PointX, const Camera camera, float2 &point, float &depth);
 float GetAngle(const cv::Vec3f &v1, const cv::Vec3f &v2);
-void StoreColorPlyFileBinaryPointCloud (const std::string &plyFilePath, const std::vector<PointList> &pc);
+void StoreColorPlyFileBinaryPointCloud(const std::string &plyFilePath, const std::vector<PointList> &pc);
 
-void RunJBU(const cv::Mat_<float>  &scaled_image_float, const cv::Mat_<float> &src_depthmap, const std::string &dense_folder , const Problem &problem);
+void RunJBU(const cv::Mat_<float> &scaled_image_float, const cv::Mat_<float> &src_depthmap, const std::string &dense_folder, const Problem &problem);
 
 #define CUDA_SAFE_CALL(error) CudaSafeCall(error, __FILE__, __LINE__)
 #define CUDA_CHECK_ERROR() CudaCheckError(__FILE__, __LINE__)
 
-void CudaSafeCall(const cudaError_t error, const std::string& file, const int line);
-void CudaCheckError(const char* file, const int line);
+void CudaSafeCall(const cudaError_t error, const std::string &file, const int line);
+void CudaCheckError(const char *file, const int line);
 
-struct cudaTextureObjects {
+struct cudaTextureObjects
+{
     cudaTextureObject_t images[MAX_IMAGES];
 };
 
-struct PatchMatchParams {
-    int max_iterations = 3;
+struct PatchMatchParams
+{
+    int max_iterations = 2;
     int patch_size = 11;
     int num_images = 5;
-    int max_image_size=3200;
+    int max_image_size = 1000;
     int radius_increment = 2;
     float sigma_spatial = 5.0f;
     float sigma_color = 3.0f;
@@ -52,7 +54,8 @@ struct PatchMatchParams {
     bool upsample = false;
 };
 
-class ACMMP {
+class ACMMP
+{
 public:
     ACMMP();
     ~ACMMP();
@@ -70,13 +73,14 @@ public:
     cv::Mat GetReferenceImage();
     float4 GetPlaneHypothesis(const int index);
     float GetCost(const int index);
-    void GetSupportPoints(std::vector<cv::Point>& support2DPoints);
-    std::vector<Triangle> DelaunayTriangulation(const cv::Rect boundRC, const std::vector<cv::Point>& points);
+    void GetSupportPoints(std::vector<cv::Point> &support2DPoints);
+    std::vector<Triangle> DelaunayTriangulation(const cv::Rect boundRC, const std::vector<cv::Point> &points);
     float4 GetPriorPlaneParams(const Triangle triangle, const cv::Mat_<float> depths);
     float GetDepthFromPlaneParam(const float4 plane_hypothesis, const int x, const int y);
     float GetMinDepth();
     float GetMaxDepth();
     void CudaPlanarPriorInitialization(const std::vector<float4> &PlaneParams, const cv::Mat_<float> &masks);
+
 private:
     int num_images;
     std::vector<cv::Mat> images;
@@ -108,11 +112,13 @@ private:
     unsigned int *plane_masks_cuda;
 };
 
-struct TexObj {
+struct TexObj
+{
     cudaTextureObject_t imgs[MAX_IMAGES];
 };
 
-struct JBUParameters {
+struct JBUParameters
+{
     int height;
     int width;
     int s_height;
@@ -120,11 +126,13 @@ struct JBUParameters {
     int Imagescale;
 };
 
-struct JBUTexObj {
+struct JBUTexObj
+{
     cudaTextureObject_t imgs[JBU_NUM];
 };
 
-class JBU {
+class JBU
+{
 public:
     JBU();
     ~JBU();

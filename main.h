@@ -26,13 +26,14 @@
 #include <memory>
 #include "iomanip"
 
-#include <sys/stat.h> // mkdir
+#include <sys/stat.h>  // mkdir
 #include <sys/types.h> // mkdir
 
 #define MAX_IMAGES 256
 #define JBU_NUM 2
 
-struct Camera {
+struct Camera
+{
     float K[9];
     float R[9];
     float t[3];
@@ -42,7 +43,8 @@ struct Camera {
     float depth_max;
 };
 
-struct Problem {
+struct Problem
+{
     int ref_image_id;
     std::vector<int> src_image_ids;
     int max_image_size = 3200;
@@ -50,12 +52,14 @@ struct Problem {
     int cur_image_size = 3200;
 };
 
-struct Triangle {
+struct Triangle
+{
     cv::Point pt1, pt2, pt3;
-    Triangle (const cv::Point _pt1, const cv::Point _pt2, const cv::Point _pt3) : pt1(_pt1) , pt2(_pt2), pt3(_pt3) {}
+    Triangle(const cv::Point _pt1, const cv::Point _pt2, const cv::Point _pt3) : pt1(_pt1), pt2(_pt2), pt3(_pt3) {}
 };
 
-struct PointList {
+struct PointList
+{
     float3 coord;
     float3 normal;
     float3 color;

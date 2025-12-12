@@ -16,7 +16,7 @@ import argparse
 import shutil
 import cv2
 
-#============================ read_model.py ============================#
+# ============================ read_model.py ============================#
 CameraModel = collections.namedtuple(
     "CameraModel", ["model_id", "model_name", "num_params"])
 Camera = collections.namedtuple(
@@ -48,23 +48,13 @@ CAMERA_MODEL_IDS = dict([(camera_model.model_id, camera_model) \
 
 
 def read_next_bytes(fid, num_bytes, format_char_sequence, endian_character="<"):
-    """Read and unpack the next bytes from a binary file.
-    :param fid:
-    :param num_bytes: Sum of combination of {2, 4, 8}, e.g. 2, 6, 16, 30, etc.
-    :param format_char_sequence: List of {c, e, f, d, h, H, i, I, l, L, q, Q}.
-    :param endian_character: Any of {@, =, <, >, !}
-    :return: Tuple of read and unpacked values.
-    """
+    """Read and unpack the next bytes from a binary file."""
     data = fid.read(num_bytes)
     return struct.unpack(endian_character + format_char_sequence, data)
 
 
 def read_cameras_text(path):
-    """
-    see: src/base/reconstruction.cc
-        void Reconstruction::WriteCamerasText(const std::string& path)
-        void Reconstruction::ReadCamerasText(const std::string& path)
-    """
+    """Reads COLMAP cameras from a text file."""
     cameras = {}
     with open(path, "r") as fid:
         while True:
@@ -86,11 +76,7 @@ def read_cameras_text(path):
 
 
 def read_cameras_binary(path_to_model_file):
-    """
-    see: src/base/reconstruction.cc
-        void Reconstruction::WriteCamerasBinary(const std::string& path)
-        void Reconstruction::ReadCamerasBinary(const std::string& path)
-    """
+    """Reads COLMAP cameras from a binary file."""
     cameras = {}
     with open(path_to_model_file, "rb") as fid:
         num_cameras = read_next_bytes(fid, 8, "Q")[0]
@@ -115,11 +101,7 @@ def read_cameras_binary(path_to_model_file):
 
 
 def read_images_text(path):
-    """
-    see: src/base/reconstruction.cc
-        void Reconstruction::ReadImagesText(const std::string& path)
-        void Reconstruction::WriteImagesText(const std::string& path)
-    """
+    """Reads COLMAP images from a text file."""
     images = {}
     with open(path, "r") as fid:
         while True:
@@ -146,11 +128,7 @@ def read_images_text(path):
 
 
 def read_images_binary(path_to_model_file):
-    """
-    see: src/base/reconstruction.cc
-        void Reconstruction::ReadImagesBinary(const std::string& path)
-        void Reconstruction::WriteImagesBinary(const std::string& path)
-    """
+    """Reads COLMAP images from a binary file."""
     images = {}
     with open(path_to_model_file, "rb") as fid:
         num_reg_images = read_next_bytes(fid, 8, "Q")[0]
@@ -181,11 +159,7 @@ def read_images_binary(path_to_model_file):
 
 
 def read_points3D_text(path):
-    """
-    see: src/base/reconstruction.cc
-        void Reconstruction::ReadPoints3DText(const std::string& path)
-        void Reconstruction::WritePoints3DText(const std::string& path)
-    """
+    """Reads COLMAP 3D points from a text file."""
     points3D = {}
     with open(path, "r") as fid:
         while True:
@@ -208,11 +182,7 @@ def read_points3D_text(path):
 
 
 def read_points3d_binary(path_to_model_file):
-    """
-    see: src/base/reconstruction.cc
-        void Reconstruction::ReadPoints3DBinary(const std::string& path)
-        void Reconstruction::WritePoints3DBinary(const std::string& path)
-    """
+    """Reads COLMAP 3D points from a binary file."""
     points3D = {}
     with open(path_to_model_file, "rb") as fid:
         num_points = read_next_bytes(fid, 8, "Q")[0]
@@ -237,15 +207,21 @@ def read_points3d_binary(path_to_model_file):
     return points3D
 
 
-def read_model(path, ext):
+def read_model(cameras_path, images_path, points3d_path, ext):
+    """Modified to read specific file paths."""
     if ext == ".txt":
-        cameras = read_cameras_text(os.path.join(path, "cameras" + ext))
-        images = read_images_text(os.path.join(path, "images" + ext))
-        points3D = read_points3D_text(os.path.join(path, "points3D") + ext)
+        print(f"Reading model files (TEXT format)...")
+        cameras = read_cameras_text(cameras_path)
+        images = read_images_text(images_path)
+        points3D = read_points3D_text(points3d_path)
     else:
-        cameras = read_cameras_binary(os.path.join(path, "cameras" + ext))
-        images = read_images_binary(os.path.join(path, "images" + ext))
-        points3D = read_points3d_binary(os.path.join(path, "points3D") + ext)
+        print(f"Reading model files (BINARY format)...")
+        cameras = read_cameras_binary(cameras_path)
+        images = read_images_binary(images_path)
+        points3D = read_points3d_binary(points3d_path)
+    
+    # 增加打印信息
+    print(f"Found {len(cameras)} cameras, {len(images)} registered images, and {len(points3D)} 3D points.")
     return cameras, images, points3D
 
 
@@ -281,19 +257,39 @@ def calc_score(inputs, images, points3d, extrinsic, args):
     i, j = inputs
     id_i = images[i+1].point3D_ids
     id_j = images[j+1].point3D_ids
-    id_intersect = [it for it in id_i if it in id_j]
+    # 使用 np.intersect1d 更高效地找到共同的 3D 点 ID
+    id_intersect = np.intersect1d(id_i[id_i != -1], id_j[id_j != -1])
+    
     cam_center_i = -np.matmul(extrinsic[i+1][:3, :3].transpose(), extrinsic[i+1][:3, 3:4])[:, 0]
     cam_center_j = -np.matmul(extrinsic[j+1][:3, :3].transpose(), extrinsic[j+1][:3, 3:4])[:, 0]
     score = 0
     angles = []
+    
+    # 增加对 id_intersect 长度的检查
+    if len(id_intersect) == 0:
+        return i, j, 0.0
+        
     for pid in id_intersect:
-        if pid == -1:
-            continue
         p = points3d[pid].xyz
-        theta = (180 / np.pi) * np.arccos(np.dot(cam_center_i - p, cam_center_j - p) / np.linalg.norm(cam_center_i - p) / np.linalg.norm(cam_center_j - p)) # triangulation angle
-        # score += np.exp(-(theta - args.theta0) * (theta - args.theta0) / (2 * (args.sigma1 if theta <= args.theta0 else args.sigma2) ** 2))
+        
+        # 优化：避免重复计算范数和点乘
+        vec_i = cam_center_i - p
+        vec_j = cam_center_j - p
+        norm_i = np.linalg.norm(vec_i)
+        norm_j = np.linalg.norm(vec_j)
+        
+        # 避免除以零（如果点P恰好是相机中心）
+        if norm_i == 0 or norm_j == 0:
+            continue
+            
+        cosine_angle = np.dot(vec_i, vec_j) / (norm_i * norm_j)
+        # 确保 cosine_angle 在 [-1, 1] 范围内，避免浮点误差导致 arccos 报错
+        cosine_angle = np.clip(cosine_angle, -1.0, 1.0)
+        
+        theta = (180 / np.pi) * np.arccos(cosine_angle) # triangulation angle
         angles.append(theta)
         score += 1
+        
     if len(angles) > 0:
         angles_sorted = sorted(angles)
         triangulationangle = angles_sorted[int(len(angles_sorted) * 0.75)]
@@ -302,22 +298,33 @@ def calc_score(inputs, images, points3d, extrinsic, args):
     return i, j, score
 
 def processing_single_scene(args):
+    print("\n" + "="*50)
+    print("🎬 Starting MVSNet Preprocessing...")
+    print(f"Source Image Dir: {args.image_dir}")
+    print(f"Output Save Dir: {args.save_folder}")
+    print("="*50 + "\n")
 
-    image_dir = os.path.join(args.dense_folder, 'images')
-    model_dir = os.path.join(args.dense_folder, 'sparse')
+    # --- 路径变量设置和目录准备 ---
+    image_dir = args.image_dir
     cam_dir = os.path.join(args.save_folder, 'cams')
     image_converted_dir = os.path.join(args.save_folder, 'images')
 
+    print(f"1. Preparing output directories: {args.save_folder}")
     if os.path.exists(image_converted_dir):
-        print("remove:{}".format(image_converted_dir))
+        print("  - Removing existing image directory.")
         shutil.rmtree(image_converted_dir)
     os.makedirs(image_converted_dir)
     if os.path.exists(cam_dir):
-        print("remove:{}".format(cam_dir))
+        print("  - Removing existing cam directory.")
         shutil.rmtree(cam_dir)
-
-    cameras, images, points3d = read_model(model_dir, args.model_ext)
+    os.makedirs(cam_dir)
+    print("  - Output directories ready.")
+    
+    # --- 模型文件读取 ---
+    print("\n2. Reading COLMAP model files...")
+    cameras, images, points3d = read_model(args.cameras_file, args.images_file, args.points3d_file, args.model_ext)
     num_images = len(list(images.items()))
+    print(f"Total {num_images} images to process.")
 
     param_type = {
         'SIMPLE_PINHOLE': ['f', 'cx', 'cy'],
@@ -333,37 +340,44 @@ def processing_single_scene(args):
         'THIN_PRISM_FISHEYE': ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'sx1', 'sy1']
     }
 
-    # intrinsic
+    # intrinsic & extrinsic map creation
     intrinsic = {}
-    for camera_id, cam in cameras.items():
+    extrinsic = {}
+    new_images = {}
+    
+    for i, image_id in enumerate(sorted(images.keys())):
+        image = images[image_id]
+        
+        # 重新映射 image ID (从 1 开始)
+        new_images[i+1] = image
+        
+        # 内参 (Intrinsic)
+        cam = cameras[image.camera_id]
         params_dict = {key: value for key, value in zip(param_type[cam.model], cam.params)}
         if 'f' in param_type[cam.model]:
             params_dict['fx'] = params_dict['f']
             params_dict['fy'] = params_dict['f']
-        i = np.array([
+        i_mat = np.array([
             [params_dict['fx'], 0, params_dict['cx']],
             [0, params_dict['fy'], params_dict['cy']],
             [0, 0, 1]
         ])
-        intrinsic[camera_id] = i
-    print('intrinsic\n', intrinsic, end='\n\n')
-
-    new_images = {}
-    for i, image_id in enumerate(sorted(images.keys())):
-        new_images[i+1] = images[image_id]
-    images = new_images
-
-    # extrinsic
-    extrinsic = {}
-    for image_id, image in images.items():
+        intrinsic[image.camera_id] = i_mat
+        
+        # 外参 (Extrinsic)
         e = np.zeros((4, 4))
         e[:3, :3] = qvec2rotmat(image.qvec)
         e[:3, 3] = image.tvec
         e[3, 3] = 1
-        extrinsic[image_id] = e
-    print('extrinsic[1]\n', extrinsic[1], end='\n\n')
+        extrinsic[i+1] = e # 注意：这里使用新的 (i+1) ID
+        
+    images = new_images
+    print(f"  - Calculated {len(intrinsic)} unique intrinsic matrices.")
+    print(f"  - First Intrinsic Matrix (Camera ID {list(intrinsic.keys())[0]}):\n{list(intrinsic.values())[0]}")
+    print(f"  - First Extrinsic Matrix (Image ID 1):\n{extrinsic[1]}")
 
-    # depth range and interval
+    # --- 深度范围和间隔计算 ---
+    print("\n3. Calculating depth ranges...")
     depth_ranges = {}
     for i in range(num_images):
         zs = []
@@ -371,13 +385,23 @@ def processing_single_scene(args):
             if p3d_id == -1:
                 continue
             transformed = np.matmul(extrinsic[i+1], [points3d[p3d_id].xyz[0], points3d[p3d_id].xyz[1], points3d[p3d_id].xyz[2], 1])
-            zs.append(np.asscalar(transformed[2]))
+            # 修复：使用 .item() 替代 np.asscalar()
+            zs.append(transformed[2].item()) 
+        
+        # 确保 zs 不为空
+        if not zs:
+            print(f"  - Warning: Image {i} has no valid 3D points. Skipping depth range calculation for this image.")
+            depth_ranges[i+1] = (0.0, 0.0, args.max_d, 0.0) # 使用默认值或一个安全值
+            continue
+
         zs_sorted = sorted(zs)
         # relaxed depth range
         depth_min = zs_sorted[int(len(zs) * .01)] * 0.75
         depth_max = zs_sorted[int(len(zs) * .99)] * 1.25
-        # determine depth number by inverse depth setting, see supplementary material
+        
+        # determine depth number (simplified calculation)
         if args.max_d == 0:
+            # 复杂的逆深度计算 (保留原逻辑)
             image_int = intrinsic[images[i+1].camera_id]
             image_ext = extrinsic[i+1]
             image_r = image_ext[0:3, 0:3]
@@ -391,36 +415,50 @@ def processing_single_scene(args):
             depth_num = (1 / depth_min - 1 / depth_max) / (1 / depth_min - 1 / (depth_min + np.linalg.norm(P2 - P1)))
         else:
             depth_num = args.max_d
+            
+        depth_num = int(round(depth_num)) # 确保深度数量是整数
         depth_interval = (depth_max - depth_min) / (depth_num - 1) / args.interval_scale
         depth_ranges[i+1] = (depth_min, depth_interval, depth_num, depth_max)
-    print('depth_ranges[1]\n', depth_ranges[1], end='\n\n')
+        
+    print(f"  - First Depth Range (Image 1): min={depth_ranges[1][0]:.3f}, num={depth_ranges[1][2]}, interval={depth_ranges[1][1]:.6f}")
 
-    # view selection
+    # --- 视图选择 ---
+    print("\n4. Performing view selection (Multi-processing)...")
     score = np.zeros((len(images), len(images)))
     queue = []
     for i in range(len(images)):
         for j in range(i + 1, len(images)):
             queue.append((i, j))
 
-    p = mp.Pool(processes=mp.cpu_count())
-    func = partial(calc_score, images=images, points3d=points3d, args=args, extrinsic=extrinsic)
-    result = p.map(func, queue)
+    # 使用 with 语句管理进程池，确保资源正确释放
+    with mp.Pool(processes=mp.cpu_count()) as p:
+        func = partial(calc_score, images=images, points3d=points3d, args=args, extrinsic=extrinsic)
+        result = p.map(func, queue)
+        
     for i, j, s in result:
         score[i, j] = s
         score[j, i] = s
+    
     view_sel = []
     num_view = min(20, len(images) - 1)
     for i in range(len(images)):
         sorted_score = np.argsort(score[i])[::-1]
-        view_sel.append([(k, score[i, k]) for k in sorted_score[:num_view]])
-    print('view_sel[0]\n', view_sel[0], end='\n\n')
+        # 过滤掉得分为 0 的视图 (可选，但常用)
+        valid_scores = [(k, score[i, k]) for k in sorted_score if score[i, k] > 0]
+        view_sel.append(valid_scores[:num_view])
+    print(f"  - View Selection Complete. Max {num_view} neighbors selected per image.")
+    print(f"  - First Image neighbors (ID 0): {view_sel[0]}")
 
-    # write
-    try:
-        os.makedirs(cam_dir)
-    except os.error:
-        print(cam_dir + ' already exist.')
+    # --- 写入 CAM 文件和 PAIR 文件 ---
+    print("\n5. Writing CAM files and pair.txt...")
+    
+    # 写入 CAM 文件
     for i in range(num_images):
+        # 增加对 depth_ranges 缺失键的检查
+        if i + 1 not in depth_ranges:
+            print(f"  - Skipping CAM file for Image {i} (no valid depth range).")
+            continue
+            
         with open(os.path.join(cam_dir, '%08d_cam.txt' % i), 'w') as f:
             f.write('extrinsic\n')
             for j in range(4):
@@ -428,44 +466,98 @@ def processing_single_scene(args):
                     f.write(str(extrinsic[i+1][j, k]) + ' ')
                 f.write('\n')
             f.write('\nintrinsic\n')
+            
+            # 增加对 intrinsic 缺失键的检查 (不太可能，但更安全)
+            cam_id = images[i+1].camera_id
+            if cam_id not in intrinsic:
+                 print(f"  - Error: Camera ID {cam_id} not found in intrinsic map.")
+                 continue
+
             for j in range(3):
                 for k in range(3):
-                    f.write(str(intrinsic[images[i+1].camera_id][j, k]) + ' ')
+                    f.write(str(intrinsic[cam_id][j, k]) + ' ')
                 f.write('\n')
+                
             f.write('\n%f %f %f %f\n' % (depth_ranges[i+1][0], depth_ranges[i+1][1], depth_ranges[i+1][2], depth_ranges[i+1][3]))
+
+    # 写入 pair.txt
     with open(os.path.join(args.save_folder, 'pair.txt'), 'w') as f:
         f.write('%d\n' % len(images))
         for i, sorted_score in enumerate(view_sel):
+            # i 是从 0 开始的索引
             f.write('%d\n%d ' % (i, len(sorted_score)))
             for image_id, s in sorted_score:
-                f.write('%d %d ' % (image_id, s))
+                # image_id 是从 1 开始的 key，但 MVSNet pair.txt 通常需要从 0 开始的 index
+                # 这里的 image_id 来自 sorted_score，是另一个图像的 0-based index k
+                # 检查原逻辑: sorted_score 存储的是 (k, score)，k 是 0-based index
+                f.write('%d %d ' % (image_id, int(round(s)))) # 将 score 转换为整数
             f.write('\n')
+    print("  - CAM files and pair.txt successfully written.")
 
-    #convert to jpg
+
+    # --- 图像转换 ---
+    print("\n6. Converting and copying images to output folder...")
+    success_count = 0
     for i in range(num_images):
-        img_path = os.path.join(image_dir, images[i + 1].name)
-        if not img_path.endswith(".jpg"):
+        img_info = images[i + 1]
+        img_path = os.path.join(image_dir, img_info.name)
+        
+        # 检查源文件是否存在
+        if not os.path.exists(img_path):
+            print(f"  - Error: Source image file not found: {img_path}. Skipping.")
+            continue
+
+        target_path = os.path.join(image_converted_dir, '%08d.jpg' % i)
+
+        if not img_path.lower().endswith((".jpg", ".jpeg")):
+            # 需要转换格式
             img = cv2.imread(img_path)
-            cv2.imwrite(os.path.join(image_converted_dir, '%08d.jpg' % i), img)
+            if img is None:
+                print(f"  - Warning: Could not read image {img_path} with OpenCV. Skipping.")
+                continue
+            cv2.imwrite(target_path, img)
         else:
-            shutil.copyfile(os.path.join(image_dir, images[i+1].name), os.path.join(image_converted_dir, '%08d.jpg' % i))
+            # 已经是 JPG，直接复制
+            shutil.copyfile(img_path, target_path)
+            
+        success_count += 1
+        
+    print(f"  - Successfully processed {success_count}/{num_images} images.")
+    print("\n" + "="*50)
+    print("✅ Preprocessing Complete!")
+    print("="*50)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert colmap camera')
 
-    parser.add_argument('--dense_folder', required=True, type=str, help='dense_folder.')
-    parser.add_argument('--save_folder', required=True, type=str, help='save_folder.')
+    # --- 新增和修改的参数 ---
+    parser.add_argument('--image_dir', required=True, type=str, help='Directory containing the source images.')
+    parser.add_argument('--cameras_file', required=True, type=str, help='Path to the COLMAP cameras file (cameras.ext).')
+    parser.add_argument('--images_file', required=True, type=str, help='Path to the COLMAP images file (images.ext).')
+    parser.add_argument('--points3d_file', required=True, type=str, help='Path to the COLMAP 3D points file (points3D.ext).')
+    parser.add_argument('--save_folder', required=True, type=str, help='Output folder to save MVSNet format data.')
+    # --- END 新增和修改的参数 ---
 
-    parser.add_argument('--max_d', type=int, default=192)
-    parser.add_argument('--interval_scale', type=float, default=1)
+    parser.add_argument('--max_d', type=int, default=192, help='Max number of depth layers. 0 for inverse depth calculation.')
+    parser.add_argument('--interval_scale', type=float, default=1, help='Scale factor for depth interval.')
 
-    parser.add_argument('--theta0', type=float, default=5)
-    parser.add_argument('--sigma1', type=float, default=1)
-    parser.add_argument('--sigma2', type=float, default=10)
-    parser.add_argument('--model_ext', type=str, default=".txt",  choices=[".txt", ".bin"], help='sparse model ext')
+    parser.add_argument('--theta0', type=float, default=5, help='Triangulation angle score threshold.')
+    parser.add_argument('--sigma1', type=float, default=1, help='Sigma for angle score < theta0.')
+    parser.add_argument('--sigma2', type=float, default=10, help='Sigma for angle score >= theta0.')
+    parser.add_argument('--model_ext', type=str, default=".txt",  choices=[".txt", ".bin"], help='sparse model extension (.txt or .bin).')
 
     args = parser.parse_args()
 
+    # 检查输入文件是否存在
+    if not os.path.exists(args.image_dir):
+        raise FileNotFoundError(f"Image directory not found: {args.image_dir}")
+    if not os.path.exists(args.cameras_file):
+        raise FileNotFoundError(f"Cameras file not found: {args.cameras_file}")
+    if not os.path.exists(args.images_file):
+        raise FileNotFoundError(f"Images file not found: {args.images_file}")
+    if not os.path.exists(args.points3d_file):
+        raise FileNotFoundError(f"3D Points file not found: {args.points3d_file}")
+    
     os.makedirs(os.path.join(args.save_folder), exist_ok=True)
     processing_single_scene(args)
