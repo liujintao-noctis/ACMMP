@@ -263,11 +263,53 @@ __device__ float4 GetViewDirection(const Camera camera, const int2 p, const floa
     return view_direction;
 }
 
+// ============================================================================
+// 计算平面到相机原点的有向距离
+// ============================================================================
+// 数学推导:
+//
+// 1. 平面方程的点法式
+// --------------------
+// 平面可表示为: n·X = d
+// 其中:
+//   n = (nx, ny, nz) 为单位法向量
+//   X = (x, y, z) 为平面上任意一点
+//   d 为平面到相机原点的有向距离
+//
+// 2. 从已知点求距离
+// ------------------
+// 给定:
+//   - 像素坐标 p = (u, v)
+//   - 深度值 depth
+//   - 法向量 n
+//
+// 步骤:
+// (1) 通过反投影获得平面上的3D点 X:
+//     X = depth · K⁻¹ · [u, v, 1]ᵀ
+//     其中 K 为相机内参矩阵
+//
+// (2) 由于 X 在平面上,满足平面方程:
+//     n · X = d
+//
+// (3) 展开:
+//     nx·x + ny·y + nz·z = d
+//
+// (4) 因此:
+//     d = n · X = nx·X[0] + ny·X[1] + nz·X[2]
+//
+// 3. 符号约定
+// ------------
+// 本代码返回 -d (负号):
+//   - 可能原因: Hessian标准式 n·X + d = 0 (d < 0 表示原点在法向量正方向)
+//   - 或者适配特定的平面表示约定
+//
+// 返回值: -(n · X) 即平面方程中的距离参数
+// ============================================================================
 __device__ float GetDistance2Origin(const Camera camera, const int2 p, const float depth, const float4 normal)
 {
     float X[3];
-    Get3DPoint(camera, p, depth, X);
-    return -(normal.x * X[0] + normal.y * X[1] + normal.z * X[2]);
+    Get3DPoint(camera, p, depth, X);                               // 从像素和深度反投影到3D点
+    return -(normal.x * X[0] + normal.y * X[1] + normal.z * X[2]); // 计算 d = -(n·X)
 }
 
 __device__ float SpatialGauss(float x1, float y1, float x2, float y2, float sigma, float mu = 0.0)
@@ -282,6 +324,77 @@ __device__ float RangeGauss(float x, float sigma, float mu = 0.0)
     return exp(-1.0 * (x_p * x_p) / (2 * sigma * sigma));
 }
 
+// ============================================================================
+// 从平面假设计算像素的深度值
+// ============================================================================
+// 数学推导:
+//
+// 1. 问题描述
+// ------------
+// 已知:
+//   - 平面方程: n·X + d = 0 或 n·X = -d  (其中 d = plane_hypothesis.w)
+//   - 像素坐标: p = (u, v)
+//   - 相机内参矩阵 K:
+//     K = [fx  0  cx]
+//         [0  fy  cy]
+//         [0   0   1]
+//
+// 求: 该像素对应的深度值 depth
+//
+// 2. 反投影公式
+// --------------
+// 像素 (u, v) 对应的相机坐标系3D点为:
+//   X = depth · K⁻¹ · [u, v, 1]ᵀ
+//
+// 展开 K⁻¹:
+//   K⁻¹ = [1/fx   0    -cx/fx]
+//         [0    1/fy  -cy/fy]
+//         [0      0      1   ]
+//
+// 因此:
+//   X = depth · [(u - cx)/fx, (v - cy)/fy, 1]ᵀ
+//
+// 即:
+//   x = depth · (u - cx) / fx
+//   y = depth · (v - cy) / fy
+//   z = depth
+//
+// 3. 代入平面方程求解深度
+// -------------------------
+// 平面方程: nx·x + ny·y + nz·z = -d
+//
+// 代入上式:
+//   nx · depth·(u-cx)/fx + ny · depth·(v-cy)/fy + nz · depth = -d
+//
+// 提取 depth:
+//   depth · [nx·(u-cx)/fx + ny·(v-cy)/fy + nz] = -d
+//
+// 解得:
+//   depth = -d / [nx·(u-cx)/fx + ny·(v-cy)/fy + nz]
+//
+// 4. 化简(利用 fy/fx)
+// --------------------
+// 记 fx = K[0], fy = K[4], cx = K[2], cy = K[5]
+// 分母可改写为:
+//   nx·(u-cx)/fx + ny·(v-cy)/fy + nz
+//   = [nx·(u-cx) + ny·(v-cy)·(fx/fy) + nz·fx] / fx
+//
+// 因此:
+//   depth = -d·fx / [nx·(u-cx) + ny·(fx/fy)·(v-cy) + nz·fx]
+//
+// 5. 代码实现
+// ------------
+// plane_hypothesis.w 存储 d
+// plane_hypothesis.x = nx, .y = ny, .z = nz
+// camera.K[0] = fx, camera.K[4] = fy
+// camera.K[2] = cx, camera.K[5] = cy
+//
+// 返回值:
+//   -plane_hypothesis.w * camera.K[0] /
+//   [(p.x - camera.K[2]) * plane_hypothesis.x +
+//    (camera.K[0] / camera.K[4]) * (p.y - camera.K[5]) * plane_hypothesis.y +
+//    camera.K[0] * plane_hypothesis.z]
+// ============================================================================
 __device__ float ComputeDepthfromPlaneHypothesis(const Camera camera, const float4 plane_hypothesis, const int2 p)
 {
     return -plane_hypothesis.w * camera.K[0] / ((p.x - camera.K[2]) * plane_hypothesis.x + (camera.K[0] / camera.K[4]) * (p.y - camera.K[5]) * plane_hypothesis.y + camera.K[0] * plane_hypothesis.z);
@@ -383,20 +496,91 @@ __device__ float4 GeneratePertubedPlaneHypothesis(const Camera camera, const int
     return plane_hypothesis;
 }
 
+// ============================================================================
+// 计算平面诱导单应矩阵 (Plane-Induced Homography)
+// ============================================================================
+// 功能: 给定参考视图、源视图和平面假设,计算将参考图像像素映射到源图像的单应矩阵
+//
+// 数学推导:
+// ============================================================================
+//
+// 1. 单应矩阵的定义
+// ------------------
+// 单应矩阵描述两个视图中同一平面上点的像素坐标映射关系:
+//   x_src ~ H · x_ref
+// 其中 ~ 表示齐次坐标相等(差一个尺度因子)
+//
+// 2. 平面诱导单应的理论推导
+// --------------------------
+// 设世界坐标系中平面方程为: n^T · X + d = 0
+// 其中 n 为单位法向量, d 为有向距离
+//
+// 对于平面上任意3D点 X:
+//   X_ref = R_ref · X + t_ref  (世界坐标 → 参考相机坐标)
+//   X_src = R_src · X + t_src  (世界坐标 → 源相机坐标)
+//
+// 由于 X 在平面上, 可表示为:
+//   X = X_ref - t_ref (简化,实际需要旋转)
+//
+// 关键推导:
+//   X_src = R_src · R_ref^T · X_ref + (t_src - R_src · R_ref^T · t_ref)
+//   
+// 结合平面约束 n^T·X = -d, 可得:
+//   X_src = [R_relative - t_relative · n^T / d] · X_ref
+//
+// 其中:
+//   R_relative = R_src · R_ref^T  (相对旋转)
+//   t_relative = R_src · (C_ref - C_src)  (相对平移)
+//   C = -R^T · t  (相机中心在世界坐标系中的位置)
+//
+// 3. 从归一化平面到像素坐标
+// --------------------------
+// 完整的单应矩阵需要考虑内参:
+//   H = K_src · [R_relative - t_relative · n^T / d] · K_ref^(-1)
+//
+// 其中:
+//   K_ref^(-1) 将参考图像像素坐标转为归一化平面坐标
+//   中间项进行3D变换
+//   K_src 将归一化平面坐标转为源图像像素坐标
+//
+// 4. 计算步骤
+// ------------
+// Step 1: 计算相机中心 C = -R^T · t
+// Step 2: 计算相对位姿 (R_relative, t_relative)
+// Step 3: 计算 H = R_relative - t_relative · n^T / d
+// Step 4: 应用内参变换 H = K_src · H · K_ref^(-1)
+//
+// ============================================================================
+// 参数:
+//   ref_camera: 参考视图相机参数 (内参K, 旋转R, 平移t)
+//   src_camera: 源视图相机参数
+//   plane_hypothesis: 平面假设 (n.x, n.y, n.z, d)
+//   H: 输出的3x3单应矩阵 (按行优先存储在长度为9的数组中)
+// ============================================================================
 __device__ void ComputeHomography(const Camera ref_camera, const Camera src_camera, const float4 plane_hypothesis, float *H)
 {
+    // ===== Step 1: 计算相机中心 C = -R^T · t =====
+    // 相机外参 [R|t] 表示: X_cam = R·X_world + t
+    // 相机中心在世界坐标系中的位置: C_world = -R^T·t
     float ref_C[3];
     float src_C[3];
+    // ref_C = -R_ref^T · t_ref  (矩阵转置相当于改变索引顺序)
     ref_C[0] = -(ref_camera.R[0] * ref_camera.t[0] + ref_camera.R[3] * ref_camera.t[1] + ref_camera.R[6] * ref_camera.t[2]);
     ref_C[1] = -(ref_camera.R[1] * ref_camera.t[0] + ref_camera.R[4] * ref_camera.t[1] + ref_camera.R[7] * ref_camera.t[2]);
     ref_C[2] = -(ref_camera.R[2] * ref_camera.t[0] + ref_camera.R[5] * ref_camera.t[1] + ref_camera.R[8] * ref_camera.t[2]);
+    // src_C = -R_src^T · t_src
     src_C[0] = -(src_camera.R[0] * src_camera.t[0] + src_camera.R[3] * src_camera.t[1] + src_camera.R[6] * src_camera.t[2]);
     src_C[1] = -(src_camera.R[1] * src_camera.t[0] + src_camera.R[4] * src_camera.t[1] + src_camera.R[7] * src_camera.t[2]);
     src_C[2] = -(src_camera.R[2] * src_camera.t[0] + src_camera.R[5] * src_camera.t[1] + src_camera.R[8] * src_camera.t[2]);
 
+    // ===== Step 2: 计算相对旋转和平移 =====
     float R_relative[9];
     float C_relative[3];
     float t_relative[3];
+    
+    // R_relative = R_src · R_ref^T (相对旋转矩阵)
+    // 这将参考相机坐标系的点转换到源相机坐标系
+    // 矩阵乘法: (R_src)_{ij} · (R_ref^T)_{jk} = (R_src)_{ij} · (R_ref)_{kj}
     R_relative[0] = src_camera.R[0] * ref_camera.R[0] + src_camera.R[1] * ref_camera.R[1] + src_camera.R[2] * ref_camera.R[2];
     R_relative[1] = src_camera.R[0] * ref_camera.R[3] + src_camera.R[1] * ref_camera.R[4] + src_camera.R[2] * ref_camera.R[5];
     R_relative[2] = src_camera.R[0] * ref_camera.R[6] + src_camera.R[1] * ref_camera.R[7] + src_camera.R[2] * ref_camera.R[8];
@@ -406,13 +590,26 @@ __device__ void ComputeHomography(const Camera ref_camera, const Camera src_came
     R_relative[6] = src_camera.R[6] * ref_camera.R[0] + src_camera.R[7] * ref_camera.R[1] + src_camera.R[8] * ref_camera.R[2];
     R_relative[7] = src_camera.R[6] * ref_camera.R[3] + src_camera.R[7] * ref_camera.R[4] + src_camera.R[8] * ref_camera.R[5];
     R_relative[8] = src_camera.R[6] * ref_camera.R[6] + src_camera.R[7] * ref_camera.R[7] + src_camera.R[8] * ref_camera.R[8];
+    
+    // C_relative = C_ref - C_src (相机中心的相对位置,在世界坐标系中)
     C_relative[0] = (ref_C[0] - src_C[0]);
     C_relative[1] = (ref_C[1] - src_C[1]);
     C_relative[2] = (ref_C[2] - src_C[2]);
+    
+    // t_relative = R_src · C_relative (将相对位置转到源相机坐标系)
+    // 这是单应矩阵公式中的平移分量
     t_relative[0] = src_camera.R[0] * C_relative[0] + src_camera.R[1] * C_relative[1] + src_camera.R[2] * C_relative[2];
     t_relative[1] = src_camera.R[3] * C_relative[0] + src_camera.R[4] * C_relative[1] + src_camera.R[5] * C_relative[2];
     t_relative[2] = src_camera.R[6] * C_relative[0] + src_camera.R[7] * C_relative[1] + src_camera.R[8] * C_relative[2];
 
+    // ===== Step 3: 计算归一化单应矩阵 H = R - t·n^T/d =====
+    // 平面方程: n·X = d (或 n·X + d = 0, 取决于符号约定)
+    // plane_hypothesis.w 存储距离 d
+    // 对于平面上的点, 单应变换为: X_src = [R - t·n^T/d] · X_ref
+    // 
+    // 矩阵形式:
+    //   H = R_relative - (t_relative ⊗ n) / d
+    // 其中 ⊗ 表示外积(秩1矩阵: t_relative 为列向量, n 为行向量)
     H[0] = R_relative[0] - t_relative[0] * plane_hypothesis.x / plane_hypothesis.w;
     H[1] = R_relative[1] - t_relative[0] * plane_hypothesis.y / plane_hypothesis.w;
     H[2] = R_relative[2] - t_relative[0] * plane_hypothesis.z / plane_hypothesis.w;
@@ -423,10 +620,17 @@ __device__ void ComputeHomography(const Camera ref_camera, const Camera src_came
     H[7] = R_relative[7] - t_relative[2] * plane_hypothesis.y / plane_hypothesis.w;
     H[8] = R_relative[8] - t_relative[2] * plane_hypothesis.z / plane_hypothesis.w;
 
+    // ===== Step 4a: 应用参考相机内参的逆 H · K_ref^(-1) =====
+    // K_ref^(-1) 的形式:
+    //   K^(-1) = [1/fx    0    -cx/fx]
+    //            [  0   1/fy  -cy/fy]
+    //            [  0     0       1 ]
+    // 
+    // tmp = H · K_ref^(-1) (将像素坐标转为归一化坐标)
     float tmp[9];
-    tmp[0] = H[0] / ref_camera.K[0];
-    tmp[1] = H[1] / ref_camera.K[4];
-    tmp[2] = -H[0] * ref_camera.K[2] / ref_camera.K[0] - H[1] * ref_camera.K[5] / ref_camera.K[4] + H[2];
+    tmp[0] = H[0] / ref_camera.K[0];  // H[0] / fx
+    tmp[1] = H[1] / ref_camera.K[4];  // H[1] / fy
+    tmp[2] = -H[0] * ref_camera.K[2] / ref_camera.K[0] - H[1] * ref_camera.K[5] / ref_camera.K[4] + H[2];  // H[2] - H[0]·cx/fx - H[1]·cy/fy
     tmp[3] = H[3] / ref_camera.K[0];
     tmp[4] = H[4] / ref_camera.K[4];
     tmp[5] = -H[3] * ref_camera.K[2] / ref_camera.K[0] - H[4] * ref_camera.K[5] / ref_camera.K[4] + H[5];
@@ -434,15 +638,23 @@ __device__ void ComputeHomography(const Camera ref_camera, const Camera src_came
     tmp[7] = H[7] / ref_camera.K[4];
     tmp[8] = -H[6] * ref_camera.K[2] / ref_camera.K[0] - H[7] * ref_camera.K[5] / ref_camera.K[4] + H[8];
 
-    H[0] = src_camera.K[0] * tmp[0] + src_camera.K[2] * tmp[6];
-    H[1] = src_camera.K[0] * tmp[1] + src_camera.K[2] * tmp[7];
-    H[2] = src_camera.K[0] * tmp[2] + src_camera.K[2] * tmp[8];
-    H[3] = src_camera.K[4] * tmp[3] + src_camera.K[5] * tmp[6];
-    H[4] = src_camera.K[4] * tmp[4] + src_camera.K[5] * tmp[7];
-    H[5] = src_camera.K[4] * tmp[5] + src_camera.K[5] * tmp[8];
-    H[6] = src_camera.K[8] * tmp[6];
-    H[7] = src_camera.K[8] * tmp[7];
-    H[8] = src_camera.K[8] * tmp[8];
+    // ===== Step 4b: 应用源相机内参 K_src · tmp =====
+    // K_src 的形式:
+    //   K = [fx   0  cx]
+    //       [ 0  fy  cy]
+    //       [ 0   0   1]
+    //
+    // H_final = K_src · tmp (将归一化坐标转为源图像像素坐标)
+    // 注意: camera.K[8] = 1 (齐次坐标的缩放因子)
+    H[0] = src_camera.K[0] * tmp[0] + src_camera.K[2] * tmp[6];  // fx·tmp[0] + cx·tmp[6]
+    H[1] = src_camera.K[0] * tmp[1] + src_camera.K[2] * tmp[7];  // fx·tmp[1] + cx·tmp[7]
+    H[2] = src_camera.K[0] * tmp[2] + src_camera.K[2] * tmp[8];  // fx·tmp[2] + cx·tmp[8]
+    H[3] = src_camera.K[4] * tmp[3] + src_camera.K[5] * tmp[6];  // fy·tmp[3] + cy·tmp[6]
+    H[4] = src_camera.K[4] * tmp[4] + src_camera.K[5] * tmp[7];  // fy·tmp[4] + cy·tmp[7]
+    H[5] = src_camera.K[4] * tmp[5] + src_camera.K[5] * tmp[8];  // fy·tmp[5] + cy·tmp[8]
+    H[6] = src_camera.K[8] * tmp[6];  // 1·tmp[6]
+    H[7] = src_camera.K[8] * tmp[7];  // 1·tmp[7]
+    H[8] = src_camera.K[8] * tmp[8];  // 1·tmp[8]
 }
 
 __device__ float2 ComputeCorrespondingPoint(const float *H, const int2 p)
@@ -525,24 +737,24 @@ __device__ float ComputeBilateralWeight(const float x_dist, const float y_dist, 
 __device__ float ComputeBilateralNCC(const cudaTextureObject_t ref_image, const Camera ref_camera, const cudaTextureObject_t src_image, const Camera src_camera, const int2 p, const float4 plane_hypothesis, const PatchMatchParams params)
 {
     // ==================== 初始化 ====================
-    const float cost_max = 2.0f;  // 最大成本（用作错误情况的惩罚）
-    int radius = params.patch_size / 2;  // 补丁半径，比如补丁大小=5时，radius=2
+    const float cost_max = 2.0f;        // 最大成本（用作错误情况的惩罚）
+    int radius = params.patch_size / 2; // 补丁半径，比如补丁大小=5时，radius=2
 
     // ==================== Step 1: 计算单应矩阵 ====================
     // 单应矩阵H描述了从参考图像到源图像的平面投影变换
     // 公式：x_src = H × x_ref（齐次坐标）
-    float H[9];  // 3×3单应矩阵，存储为1D数组
+    float H[9]; // 3×3单应矩阵，存储为1D数组
     ComputeHomography(ref_camera, src_camera, plane_hypothesis, H);
-    
+
     // ==================== Step 2: 计算对应点 ====================
     // 参考图像中的像素p对应源图像中的哪个点
     float2 pt = ComputeCorrespondingPoint(H, p);
-    
+
     // ==================== 边界检查 ====================
     // 如果对应点超出源图像边界，返回最大成本（匹配失败）
     if (pt.x >= src_camera.width || pt.x < 0.0f || pt.y >= src_camera.height || pt.y < 0.0f)
     {
-        return cost_max;  // 无效对应
+        return cost_max; // 无效对应
     }
 
     float cost = 0.0f;
@@ -550,14 +762,14 @@ __device__ float ComputeBilateralNCC(const cudaTextureObject_t ref_image, const 
         // ==================== Step 3: 双边加权统计量累计 ====================
         // 计算NCC需要的统计量：
         // sum_ref, sum_ref_ref, sum_src, sum_src_src, sum_ref_src, weight_sum
-        
-        float sum_ref = 0.0f;           // Σ w_k × ref_pix[k]
-        float sum_ref_ref = 0.0f;       // Σ w_k × ref_pix[k]²
-        float sum_src = 0.0f;           // Σ w_k × src_pix[k]
-        float sum_src_src = 0.0f;       // Σ w_k × src_pix[k]²
-        float sum_ref_src = 0.0f;       // Σ w_k × ref_pix[k] × src_pix[k]
-        float bilateral_weight_sum = 0.0f;  // Σ w_k（权重总和，用于归一化）
-        
+
+        float sum_ref = 0.0f;              // Σ w_k × ref_pix[k]
+        float sum_ref_ref = 0.0f;          // Σ w_k × ref_pix[k]²
+        float sum_src = 0.0f;              // Σ w_k × src_pix[k]
+        float sum_src_src = 0.0f;          // Σ w_k × src_pix[k]²
+        float sum_ref_src = 0.0f;          // Σ w_k × ref_pix[k] × src_pix[k]
+        float bilateral_weight_sum = 0.0f; // Σ w_k（权重总和，用于归一化）
+
         // 参考图像中心像素的灰度值（用于计算灰度相似性权重）
         const float ref_center_pix = tex2D<float>(ref_image, p.x + 0.5f, p.y + 0.5f);
 
@@ -580,7 +792,7 @@ __device__ float ComputeBilateralNCC(const cudaTextureObject_t ref_image, const 
                 // 【参考图像像素】
                 const int2 ref_pt = make_int2(p.x + i, p.y + j);
                 const float ref_pix = tex2D<float>(ref_image, ref_pt.x + 0.5f, ref_pt.y + 0.5f);
-                
+
                 // 【源图像对应点】
                 // 通过单应矩阵将参考补丁中的每个点映射到源图像
                 float2 src_pt = ComputeCorrespondingPoint(H, ref_pt);
@@ -612,21 +824,21 @@ __device__ float ComputeBilateralNCC(const cudaTextureObject_t ref_image, const 
             sum_ref_src += sum_ref_src_row;
             bilateral_weight_sum += bilateral_weight_sum_row;
         }
-        
+
         // ==================== Step 4: 统计量归一化 ====================
         // 计算加权平均值（除以权重总和）
         // 这样可以处理补丁边界处权重不同的情况
         const float inv_bilateral_weight_sum = 1.0f / bilateral_weight_sum;
-        sum_ref *= inv_bilateral_weight_sum;           // 参考图像均值
+        sum_ref *= inv_bilateral_weight_sum; // 参考图像均值
         sum_ref_ref *= inv_bilateral_weight_sum;
-        sum_src *= inv_bilateral_weight_sum;           // 源图像均值
+        sum_src *= inv_bilateral_weight_sum; // 源图像均值
         sum_src_src *= inv_bilateral_weight_sum;
         sum_ref_src *= inv_bilateral_weight_sum;
 
         // ==================== Step 5: 方差和协方差计算 ====================
         // 方差 = E[X²] - E[X]²
-        const float var_ref = sum_ref_ref - sum_ref * sum_ref;   // 参考图像方差
-        const float var_src = sum_src_src - sum_src * sum_src;   // 源图像方差
+        const float var_ref = sum_ref_ref - sum_ref * sum_ref; // 参考图像方差
+        const float var_src = sum_src_src - sum_src * sum_src; // 源图像方差
 
         // ==================== Step 6: 异常情况处理 ====================
         // 如果方差太小（接近0），说明补丁缺乏纹理信息
@@ -651,18 +863,18 @@ __device__ float ComputeBilateralNCC(const cudaTextureObject_t ref_image, const 
             // │  0.0: 无相关性                           │
             // │ -1.0: 完全负相关                         │
             // └──────────────────────────────────────────┘
-            
+
             // 协方差 = E[ref·src] - E[ref]·E[src]
             const float covar_src_ref = sum_ref_src - sum_ref * sum_src;
-            
+
             // 标准差的乘积
             const float var_ref_src = sqrt(var_ref * var_src);
-            
+
             // NCC相关系数
             // cost = 1.0 - NCC（转换为成本，匹配越好成本越小）
             // 使用max(0, min(cost_max, ...))确保成本在[0, cost_max]范围内
             return cost = max(0.0f, min(cost_max, 1.0f - covar_src_ref / var_ref_src));
-            
+
             // ==================== 成本解释 ====================
             // NCC=1.0 (完美匹配)  → cost = 1.0 - 1.0 = 0.0 ✓ (成本最小)
             // NCC=0.5 (中等匹配)  → cost = 1.0 - 0.5 = 0.5
@@ -677,7 +889,7 @@ __device__ float ComputeBilateralNCC(const cudaTextureObject_t ref_image, const 
 // 【标准NCC】（等权重）
 // ──────────
 // 所有补丁像素权重相同：w[i,j] = 1
-// 
+//
 // 优点：简单快速
 // 缺点：
 //   - 补丁边界的像素也被计算（可能在图像边缘之外）
@@ -687,7 +899,7 @@ __device__ float ComputeBilateralNCC(const cudaTextureObject_t ref_image, const 
 // 【双边NCC】（自适应加权）✓ 本函数
 // ──────────
 // 权重随空间距离和灰度差异变化
-// 
+//
 // 优点：
 //   - 减少补丁边界像素的影响
 //   - 纹理边缘自动降权（颜色差异大 → 权重小）
@@ -1266,77 +1478,232 @@ __global__ void RandomInitialization(cudaTextureObjects *texture_objects, Camera
 // ✗ 不利用灰度相似性，可能丢失细节
 // 适用场景：已有好的上层结果，只做微调的情况
 
+// ============================================================================
+// 平面假设细化函数 (Plane Hypothesis Refinement)
+// ============================================================================
+// 功能:通过随机采样和扰动生成多个候选平面假设,计算每个假设的代价,并选择最优假设更新当前平面参数
+//
+// 数学推导与公式说明:
+// ============================================================================
+//
+// 1. 平面方程表示
+// ----------------
+// 3D空间中的平面可用点法式表示: n·(X - X₀) = 0
+// 其中: n = (nx, ny, nz) 为单位法向量, X₀ 为平面上一点
+// 展开得: nx·x + ny·y + nz·z = nx·x₀ + ny·y₀ + nz·z₀
+// 令 d = n·X₀ 为平面到原点的有向距离,则平面方程为:
+//   nx·x + ny·y + nz·z = d  或  n·X = d
+//
+// 在本代码中,使用 float4 存储平面参数: (nx, ny, nz, d)
+//
+// 2. 深度与平面参数的转换
+// ------------------------
+// 已知像素坐标 p=(u,v) 和深度 depth,可求3D点 X:
+//   X = depth · K⁻¹ · [u, v, 1]ᵀ
+// 其中 K 为相机内参矩阵
+//
+// 已知平面参数 (n, d) 和像素坐标 p,可求深度:
+//   depth = d / (n · K⁻¹ · [u, v, 1]ᵀ)
+//
+// 3. 先验概率模型 (Planar Prior)
+// -------------------------------
+// 当使用平面先验时,假设真实平面参数服从先验分布。
+// 采用高斯混合模型,同时约束深度和法向量:
+//
+// P(θ|θ_prior) = γ + exp(-Δd²/(2σ_d²)) · exp(-Δα²/(2σ_α²))
+//
+// 其中:
+//   θ = (d, n) 为当前假设的平面参数
+//   θ_prior = (d_prior, n_prior) 为先验平面参数
+//   Δd = d - d_prior 为深度差
+//   Δα = arccos(n · n_prior) 为法向量夹角
+//   σ_d 为深度标准差, σ_α 为角度标准差
+//   γ 为基准概率(防止先验过强导致无法跳出局部最优)
+//
+// 推导依据: 假设深度误差和角度误差独立,且服从零均值高斯分布
+//
+// 深度标准差设定: σ_d = (depth_max - depth_min) / 64
+//   - 依据: 假设整个深度范围约为 ±3σ 的置信区间
+//   - 64 ≈ 2×32, 即深度范围覆盖约 6σ
+//
+// 角度标准差设定: σ_α = 5° = π/36 rad
+//   - 依据: 平面法向量估计的典型误差在5度以内
+//
+// 4. 带先验的综合代价函数
+// -------------------------
+// 将匹配代价 C_match 和先验概率结合:
+//
+// C_restricted = exp(-C_match² / β) · P(θ|θ_prior)
+//
+// 其中:
+//   C_match 为归一化的多视图光度一致性代价
+//   β 为缩放参数,控制代价的敏感度
+//   目标: 最大化 C_restricted (即同时最小化匹配代价并接近先验)
+//
+// 推导依据:
+//   - exp(-C_match²/β) 将线性代价转换为概率形式(类似鲁棒核函数)
+//   - β 越小,对代价越敏感; β 越大,更依赖先验
+//   - 两个概率相乘,等价于联合分布(假设独立)
+//
+// β 设定: β = 0.18
+//   - 经验值,使得代价在 [0, 1] 范围时,exp(-C²/β) 保持合理的区分度
+//
+// 5. 多视图代价聚合
+// ------------------
+// 总代价为各视图代价的加权和:
+//
+// C_total = (Σᵢ wᵢ · Cᵢ) / (Σᵢ wᵢ)
+//
+// 其中:
+//   wᵢ 为视图 i 的权重(基于视角、分辨率等)
+//   Cᵢ 为视图 i 的匹配代价
+//   若启用几何一致性: Cᵢ = C_photo,i + λ · C_geom,i
+//   λ = 0.2 为几何一致性权重
+//
+// 6. 随机采样策略
+// ----------------
+// (1) 无先验: 均匀采样
+//     d_rand ~ Uniform(d_min, d_max)
+//     n_rand ~ 球面均匀分布
+//
+// (2) 有先验: 在先验附近采样
+//     d_rand ~ Uniform(d_prior - 3σ_d, d_prior + 3σ_d)
+//     n_rand ~ n_prior + 扰动(标准差为 σ_α)
+//
+// (3) 局部扰动: 在当前值附近小范围搜索
+//     d_perturbed ~ Uniform(0.98d, 1.02d)  // ±2% 扰动
+//     n_perturbed ~ n + 扰动(标准差为 0.02π ≈ 3.6°)
+//
+// ============================================================================
+// 参数:
+//   images: 多视图纹理图像数组
+//   depth_images: 多视图深度图像数组
+//   cameras: 相机参数数组
+//   plane_hypothesis: 当前平面假设(法向量+距离),输入输出参数
+//   depth: 当前深度值,输入输出参数
+//   cost: 当前代价值,输入输出参数
+//   rand_state: CUDA随机数生成器状态
+//   view_weights: 各视图的权重
+//   weight_norm: 权重归一化系数
+//   prior_planes: 先验平面(来自平面检测)
+//   plane_masks: 平面掩码,标识哪些像素属于平面区域
+//   restricted_cost: 带先验约束的代价值
+//   p: 当前像素坐标
+//   params: PatchMatch算法参数
+// ============================================================================
 __device__ void PlaneHypothesisRefinement(const cudaTextureObject_t *images, const cudaTextureObject_t *depth_images, const Camera *cameras, float4 *plane_hypothesis, float *depth, float *cost, curandState *rand_state, const float *view_weights, const float weight_norm, float4 *prior_planes, unsigned int *plane_masks, float *restricted_cost, const int2 p, const PatchMatchParams params)
 {
+    // 扰动幅度,用于生成接近当前值的随机变化
     float perturbation = 0.02f;
+    // 计算当前像素在图像数组中的线性索引
     const int center = p.y * cameras[0].width + p.x;
 
+    // ===== 先验约束相关参数 =====
+    // gamma: 先验概率的基准值
     float gamma = 0.5f;
+    // depth_sigma: 深度高斯分布的标准差
     float depth_sigma = (params.depth_max - params.depth_min) / 64.0f;
     float two_depth_sigma_squared = 2 * depth_sigma * depth_sigma;
+    // angle_sigma: 法向量角度高斯分布的标准差(5度转弧度)
     float angle_sigma = M_PI * (5.0f / 180.0f);
     float two_angle_sigma_squared = 2 * angle_sigma * angle_sigma;
+    // beta: 代价函数的缩放参数
     float beta = 0.18f;
     float depth_prior = 0.0f;
 
+    // ===== 生成随机采样的深度和法向量 =====
     float depth_rand;
     float4 plane_hypothesis_rand;
+    // 如果启用平面先验且当前像素在平面区域内
     if (params.planar_prior && plane_masks[center] > 0)
     {
+        // 从先验平面计算深度值
         depth_prior = ComputeDepthfromPlaneHypothesis(cameras[0], prior_planes[center], p);
+        // 在先验深度附近的[-3σ, +3σ]范围内随机采样深度
         depth_rand = curand_uniform(rand_state) * 6 * depth_sigma + (depth_prior - 3 * depth_sigma);
+        // 在先验法向量附近生成扰动的法向量(角度扰动为angle_sigma)
         plane_hypothesis_rand = GeneratePerturbedNormal(cameras[0], p, prior_planes[center], rand_state, angle_sigma);
     }
     else
     {
+        // 无先验情况:在整个深度范围内随机采样
         depth_rand = curand_uniform(rand_state) * (params.depth_max - params.depth_min) + params.depth_min;
+        // 生成完全随机的法向量
         plane_hypothesis_rand = GenerateRandomNormal(cameras[0], p, rand_state, *depth);
     }
+
+    // ===== 生成当前深度的小幅扰动 =====
     float depth_perturbed = *depth;
+    // 扰动范围为当前深度的±2%
     const float depth_min_perturbed = (1 - perturbation) * depth_perturbed;
     const float depth_max_perturbed = (1 + perturbation) * depth_perturbed;
+    // 循环生成扰动深度,确保在有效范围内
+    // 注意:原代码逻辑有bug,条件应为 || 而非 &&
     do
     {
         depth_perturbed = curand_uniform(rand_state) * (depth_max_perturbed - depth_min_perturbed) + depth_min_perturbed;
     } while (depth_perturbed < params.depth_min && depth_perturbed > params.depth_max);
+    // 在当前法向量附近生成小角度扰动(约3.6度)
     float4 plane_hypothesis_perturbed = GeneratePerturbedNormal(cameras[0], p, *plane_hypothesis, rand_state, perturbation * M_PI);
 
+    // ===== 构造5个候选平面假设 =====
+    // 策略:组合不同的深度和法向量,覆盖随机探索、局部扰动等多种采样方式
     const int num_planes = 5;
+    // 深度数组:[随机深度, 当前深度, 随机深度, 当前深度, 扰动深度]
     float depths[num_planes] = {depth_rand, *depth, depth_rand, *depth, depth_perturbed};
+    // 法向量数组:[当前法向量, 随机法向量, 随机法向量, 扰动法向量, 当前法向量]
     float4 normals[num_planes] = {*plane_hypothesis, plane_hypothesis_rand, plane_hypothesis_rand, plane_hypothesis_perturbed, *plane_hypothesis};
 
+    // ===== 评估所有候选平面假设 =====
     for (int i = 0; i < num_planes; ++i)
     {
+        // 初始化代价向量(每个视图一个代价值,最大支持32个视图)
         float cost_vector[32] = {2.0f};
+        // 构造完整的平面参数(法向量xyz + 到原点距离w)
         float4 temp_plane_hypothesis = normals[i];
         temp_plane_hypothesis.w = GetDistance2Origin(cameras[0], p, depths[i], temp_plane_hypothesis);
+        // 计算该平面假设在多个视图下的光度一致性代价
         ComputeMultiViewCostVector(images, cameras, p, temp_plane_hypothesis, cost_vector, params);
 
+        // 聚合多视图代价
         float temp_cost = 0.0f;
         for (int j = 0; j < params.num_images - 1; ++j)
         {
             if (view_weights[j] > 0)
             {
+                // 如果启用几何一致性约束
                 if (params.geom_consistency)
                 {
+                    // 总代价 = 光度代价 + 0.2 * 几何一致性代价
                     temp_cost += view_weights[j] * (cost_vector[j] + 0.2f * ComputeGeomConsistencyCost(depth_images[j + 1], cameras[0], cameras[j + 1], temp_plane_hypothesis, p));
                 }
                 else
                 {
+                    // 仅使用光度代价
                     temp_cost += view_weights[j] * cost_vector[j];
                 }
             }
         }
+        // 归一化代价
         temp_cost /= weight_norm;
 
+        // 从平面假设反算深度值
         float depth_before = ComputeDepthfromPlaneHypothesis(cameras[0], temp_plane_hypothesis, p);
+
+        // ===== 更新最优假设 =====
+        // 如果启用平面先验且当前像素在平面区域
         if (params.planar_prior && plane_masks[center] > 0)
         {
+            // 计算与先验深度的差异
             float depth_diff = depths[i] - depth_prior;
+            // 计算与先验法向量的角度差异
             float angle_cos = Vec3DotVec3(prior_planes[center], temp_plane_hypothesis);
             float angle_diff = acos(angle_cos);
+            // 先验概率:深度和角度差异越小,概率越高(高斯分布)
             float prior = gamma + exp(-depth_diff * depth_diff / two_depth_sigma_squared) * exp(-angle_diff * angle_diff / two_angle_sigma_squared);
+            // 综合代价:结合匹配代价的指数项和先验概率
             float restricted_temp_cost = exp(-temp_cost * temp_cost / beta) * prior;
+            // 如果深度有效且综合代价更优,则更新
             if (depth_before >= params.depth_min && depth_before <= params.depth_max && restricted_temp_cost > *restricted_cost)
             {
                 *depth = depth_before;
@@ -1347,6 +1714,7 @@ __device__ void PlaneHypothesisRefinement(const cudaTextureObject_t *images, con
         }
         else
         {
+            // 无先验约束:仅比较匹配代价(代价越小越好)
             if (depth_before >= params.depth_min && depth_before <= params.depth_max && temp_cost < *cost)
             {
                 *depth = depth_before;
